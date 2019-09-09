@@ -1,0 +1,17 @@
+# builds
+dist
+
+# ide
+/.vscode
+
+# lerna
+lerna-debug.log
+
+# npm
+node_modules
+
+# typescript
+*.tsbuildinfo
+
+# yarn
+yarn-error.log
