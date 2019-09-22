@@ -1,0 +1,13 @@
+{
+    "extends": "../tsconfig.base.json",
+    "compilerOptions": {
+        "outDir": "dist",
+        "rootDir": "src"
+    },
+    "include": ["src"],
+    "references": [
+        { "path": "../request-client" },
+        { "path": "../request-client-mock" },
+        { "path": "../request-client-retry" }
+    ]
+}

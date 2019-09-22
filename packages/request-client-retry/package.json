@@ -1,0 +1,29 @@
+{
+    "name": "@sprig/request-client-retry",
+    "description": "A retry interceptor for the request client.",
+    "version": "0.1.2",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jjvainav/shrub.git"
+    },
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc",
+        "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
+        "test": "jest"
+    },
+    "dependencies": {
+        "@sprig/request-client": "0.1.2"
+    },
+    "devDependencies": {
+        "@sprig/request-client-mock": "0.1.2"
+    }
+}
