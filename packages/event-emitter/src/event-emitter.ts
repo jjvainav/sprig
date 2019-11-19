@@ -11,6 +11,10 @@ export interface IEventEmitterOptions {
     readonly onLastListenerRemove?: () => void;
 }
 
+export interface IEventListener { 
+    remove(): void 
+}
+
 interface IEventProperties<TArgs> {
     readonly name: string;
     readonly on: IEventSubscription<TArgs>;
@@ -23,10 +27,6 @@ interface IEventProperties<TArgs> {
     map<T>(map: (args: TArgs) => T): IEvent<T>;
     split<T>(splitter: (args: TArgs) => Iterable<T>): IEvent<T>;
 } 
-
-interface IEventListener { 
-    remove(): void 
-};
 
 const eventProto: IEventProperties<any> = {
     name: "",
