@@ -1,10 +1,11 @@
+// put this at the top to prevent any hoisting issues with TS and jest
+jest.mock("axios");
+
 import axios, { AxiosError, AxiosPromise, AxiosRequestConfig, AxiosResponse } from "axios";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
 import * as url from "url";
 import client, { IRequestOptions } from "@sprig/request-client";
-
-jest.mock("axios");
 
 export interface IMockResponse {
     data?: any;
