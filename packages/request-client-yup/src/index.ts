@@ -1,8 +1,8 @@
 import * as yup from "yup";
 import { IResponse, RequestError, RequestErrorCode } from "@sprig/request-client";
 
-/** Response handler that accepts a yup object schema to extract and validate response data. */
-export function validate<T extends object>(response: IResponse, schema: yup.ObjectSchema<T>, options?: yup.ValidateOptions): Promise<T> {
+/** Response handler that accepts a yup schema to extract and validate response data. */
+export function validate<T>(response: IResponse, schema: yup.Schema<T>, options?: yup.ValidateOptions): Promise<T> {
     return new Promise((resolve, reject) => {
         options = options || { stripUnknown: true };
 
