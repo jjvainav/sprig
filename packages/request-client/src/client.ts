@@ -149,6 +149,8 @@ function validateExpectedStatus(status: number): boolean {
 }
 
 export class RequestError extends Error {
+    private readonly __isRequestError = true;
+
     readonly code: RequestErrorCode;
     readonly request: IRequest;
     readonly response?: IResponse;
@@ -162,6 +164,10 @@ export class RequestError extends Error {
         this.request = args.request;
         this.response = args.response;
         this.data = args.data;
+    }
+
+    static isRequestError(err: Error): err is RequestError {
+        return (<RequestError>err).__isRequestError;
     }
 }
 
@@ -220,7 +226,7 @@ class RequestInstance implements IRequest {
                 });
             })
             .catch(error => {
-                if (error instanceof RequestError) {
+                if (RequestError.isRequestError(error)) {
                     return RequestInstance.invokeResponseInterceptors({
                         request: new RequestInstance(request.options, requestInterceptors, responseInterceptors),
                         interceptors: responseInterceptors,
