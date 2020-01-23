@@ -1,6 +1,8 @@
+export type EventCallback<TArgs> = (args: TArgs) => Promise<void> | void | any;
+
 /** Defines a function for subscribing callbacks with an IEvent. */
 export interface IEventSubscription<TArgs> {
-    (callback: (args: TArgs) => void): IEventListener;
+    (callback: EventCallback<TArgs>): IEventListener;
 }
 
 export interface IEvent<TArgs = void> extends IEventSubscription<TArgs>, IEventProperties<TArgs> {
@@ -35,9 +37,10 @@ const eventProto: IEventProperties<any> = {
     },
     get once(): IEventSubscription<any> {
         return callback => {
-            const listener = this.on(args => {
-                callback(args);
+            const listener = this.on(async args => {
+                // since the callbacks can be async remove the listener first
                 listener.remove();
+                await invokeCallback(callback, args);
             });
     
             return listener;
@@ -95,9 +98,9 @@ const eventProto: IEventProperties<any> = {
     filter(predicate: (args: any) => boolean): IEvent<any> {
         // create a new event that will invoke its callback only if the predicate evaluates to true
         return createEvent<any>(this.name, callback => {
-            return this.on(args => {
+            return this.on(async args => {
                 if (predicate(args)) {
-                    callback(args);
+                    await invokeCallback(callback, args);
                 }
             });
         });
@@ -113,9 +116,9 @@ const eventProto: IEventProperties<any> = {
     split<T>(splitter: (args: any) => Iterable<T>): IEvent<T> {
         return createEvent<T>(this.name, callback => {
             // create a new event that will invoke the callback with each result from the splitter
-            return this.on(args => {
+            return this.on(async args => {
                 for (const result of splitter(args)) {
-                    callback(result);
+                    await invokeCallback(callback, result);
                 }
             });
         });
@@ -131,8 +134,19 @@ function createEvent<TArgs>(name: string, subscription: IEventSubscription<TArgs
     return <IEvent<TArgs>>subscription;
 }
 
+async function invokeCallback<TArgs>(callback: EventCallback<TArgs>, args: TArgs): Promise<void> {
+    const result = callback(args);
+    if (isPromise(result)) {
+        await result;
+    }
+}
+
+function isPromise(obj: any): obj is Promise<void> {
+    return obj && (<Promise<void>>obj).then !== undefined && (<Promise<void>>obj).catch !== undefined;
+}
+
 export class EventEmitter<TArgs = void> {
-    private callbacks?: Function[];
+    private callbacks?: EventCallback<TArgs>[];
 
     readonly event: IEvent<TArgs>;
 
@@ -175,9 +189,24 @@ export class EventEmitter<TArgs = void> {
         return this.callbacks.length;
     }
 
-    emit(args: TArgs): void {
+    async emit(args: TArgs): Promise<void> {
         if (this.callbacks !== undefined) {
-            this.callbacks.forEach(callback => callback(args));
+            const promises: Promise<void>[] = [];
+            this.callbacks.forEach(callback => {
+                const promise = callback(args);
+                if (isPromise(promise)) {
+                    promises.push(promise);
+                }
+            });
+
+            if (promises.length) {
+                const results = await Promise.all(promises.map(p => p.catch(e => e)));
+                const errors = results.filter(result => result instanceof Error);
+                
+                if (errors.length) {
+                    return Promise.reject(errors);
+                }
+            }
         }
     }
 
@@ -198,7 +227,7 @@ export class EventEmitter<TArgs = void> {
  * const emitter = new AggregateEventEmitter<string>("emitter");
  * 
  * emitter.wrap(event, () => "", (args, result) => result + args);
- * emitter.collectEvents(() => {
+ * await emitter.collectEvents(() => {
  *  // every time the wrapped 'event' is fired here the results will be correlated into 'result'
  * });
  * 
@@ -240,13 +269,13 @@ export class AggregateEventEmitter<TArgs> extends EventEmitter<TArgs> implements
         }));
     }
     
-    collectEvents(action: () => void): void {
+    async collectEvents(action: () => Promise<void> | void): Promise<void> {
         this.captured = 0;
 
-        action();
+        await action();
 
         if (this.captured > 0) {
-            this.emit(this.result!);
+            await this.emit(this.result!);
         }
 
         this.captured = -1;

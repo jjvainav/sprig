@@ -1,6 +1,8 @@
 import { EventEmitter, IEvent } from "../src";
 
 describe("event emmitter", () => {
+    jest.useFakeTimers();
+
     test("on event", () => {
         const foo = new Foo();
         let flag = false;
@@ -44,7 +46,6 @@ describe("event emmitter", () => {
         expect(count).toBe(4);
     });
 
-    jest.useFakeTimers();
     test("debounce single emit", () => {
         const foo = new Foo();
 
@@ -64,7 +65,6 @@ describe("event emmitter", () => {
         expect(value).toBe("b");
     });
 
-    jest.useFakeTimers();
     test("debounce multiple emit", () => {
         const foo = new Foo();
         const result: string[] = [];
@@ -93,7 +93,6 @@ describe("event emmitter", () => {
         expect(result[1]).toBe("d");
     });
 
-    jest.useFakeTimers();
     test("debounce with delayed emit", () => {
         const foo = new Foo();
 
@@ -119,7 +118,6 @@ describe("event emmitter", () => {
         expect(value).toBe("h");
     });
 
-    jest.useFakeTimers();
     test("debounce multiple event subscriptions", () => {
         const foo = new Foo();
         const result1: string[] = [];
@@ -154,7 +152,6 @@ describe("event emmitter", () => {
         expect(result3[1]).toBe("d");
     });
 
-    jest.useFakeTimers();
     test("debounce with reducer", () => {
         const foo = new Foo();
 
@@ -224,7 +221,7 @@ describe("event emmitter", () => {
         expect(count).toBe(1);
     });
 
-    test("split array results", () => {
+    test("split array results", async () => {
         const foo = new Foo();
         const results: string[] = [];
 
@@ -234,7 +231,7 @@ describe("event emmitter", () => {
         foo.a = "a";
         foo.b = "b";
         foo.c = "c";
-        foo.end();
+        await foo.end();
 
         expect(results).toHaveLength(3);
         expect(results[0]).toBe("a");
@@ -242,7 +239,7 @@ describe("event emmitter", () => {
         expect(results[2]).toBe("c");
     });
 
-    test("split array with single result", () => {
+    test("split array with single result", async () => {
         const foo = new Foo();
         const results: string[] = [];
         
@@ -250,7 +247,7 @@ describe("event emmitter", () => {
 
         foo.begin();
         foo.a = "a";
-        foo.end();
+        await foo.end();
 
         expect(results).toHaveLength(1);
         expect(results[0]).toBe("a");
@@ -269,6 +266,40 @@ describe("event emmitter", () => {
         foo.a = "c";
 
         expect(count).toBe(0);
+    });
+
+    test("async event callback", async () => {
+        const emitter = new EventEmitter("test");
+        let flag = false;
+
+        emitter.event.on(() => new Promise(resolve => {
+            setTimeout(() => {
+                flag = true;
+                resolve(flag);
+            }, 1);
+
+            jest.runAllTimers();
+        }));
+
+        await emitter.emit();
+
+        expect(flag).toBe(true);
+    });
+
+    test("async event callback that fails", async () => {
+        const emitter = new EventEmitter("test");
+
+        emitter.event.on(() => new Promise((resolve, reject) => {
+            setTimeout(() => reject(new Error("Fail.")), 1);
+            jest.runAllTimers();
+        }));
+
+        try {
+            await emitter.emit();
+            fail();
+        }
+        catch {
+        }
     });
 });
 
@@ -305,10 +336,10 @@ class Foo {
         this.changes = {};
     }
 
-    end(): void {
+    async end(): Promise<void> {
         const result: { key: string, value: string }[] = [];
         Object.keys(this.changes).forEach(key => result.push({ key, value: this.changes[key] }));
-        this.valuesChanged.emit(result);
+        await this.valuesChanged.emit(result);
         this.changes = {};
     }
 
