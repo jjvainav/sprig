@@ -286,6 +286,24 @@ describe("event emmitter", () => {
         expect(flag).toBe(true);
     });
 
+    test("async event callback using once", async () => {
+        const emitter = new EventEmitter("test");
+        let flag = false;
+
+        emitter.event.once(() => new Promise(resolve => {
+            setTimeout(() => {
+                flag = true;
+                resolve();
+            }, 1);
+
+            jest.runAllTimers();
+        }));
+
+        await emitter.emit();
+
+        expect(flag).toBe(true);
+    });
+
     test("async event callback that fails", async () => {
         const emitter = new EventEmitter("test");
 

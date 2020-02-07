@@ -44,7 +44,7 @@ export interface IRequest {
 }
 
 export interface IRequestOptions {
-	readonly method: "GET" | "POST" | "PUT" | "DELETE";
+	readonly method: "GET" | "PATCH" | "POST" | "PUT" | "DELETE";
 	readonly url?: string;
 	readonly data?: any;
     readonly timeout?: number;
