@@ -1,5 +1,5 @@
-import * as base62 from "base62";
-import * as crypto from "crypto";
+import base62 from "base62";
+import crypto from "crypto";
 
 export = function randomString(length: number): string {
     // this is borrowed from: https://gist.github.com/aseemk/3095925
