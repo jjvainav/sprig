@@ -1,6 +1,6 @@
 {
-    "name": "@sprig/request-client-yup",
-    "description": "Provides a request client response handler for validating response data using yup.",
+    "name": "@sprig/edit-operation",
+    "description": "Defines an abstraction and core functions for edit operations against an object model.",
     "version": "0.1.12",
     "license": "MIT",
     "repository": {
@@ -21,11 +21,6 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.1.12",
-        "yup": "^0.27.0"
-    },
-    "devDependencies": {
-        "@sprig/request-client-mock": "0.1.12",
-        "@types/yup": "^0.26.13"
+        "@sprig/immutable-collection": "0.1.12"
     }
 }

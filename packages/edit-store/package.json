@@ -1,6 +1,5 @@
 {
-    "name": "@sprig/request-client-yup",
-    "description": "Provides a request client response handler for validating response data using yup.",
+    "name": "@sprig/edit-store",
     "version": "0.1.12",
     "license": "MIT",
     "repository": {
@@ -16,16 +15,12 @@
         "access": "public"
     },
     "scripts": {
-        "build": "tsc",
+        "build": "tsc -b .",
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.1.12",
-        "yup": "^0.27.0"
-    },
-    "devDependencies": {
-        "@sprig/request-client-mock": "0.1.12",
-        "@types/yup": "^0.26.13"
+        "@sprig/edit-operation": "0.1.12",
+        "@sprig/store": "0.1.12"
     }
 }
