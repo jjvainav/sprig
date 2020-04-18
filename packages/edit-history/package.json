@@ -1,0 +1,27 @@
+{
+    "name": "@sprig/edit-history",
+    "version": "0.1.12",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jjvainav/sprig.git"
+    },
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc -b .",
+        "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
+        "test": "jest --silent"
+    },
+    "peerDependencies": {
+        "@sprig/edit-operation": "0.1.12",
+        "@sprig/edit-queue": "0.1.12",
+        "@sprig/event-emitter": "0.1.12"
+    }
+}
