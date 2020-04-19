@@ -19,9 +19,9 @@
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
         "test": "jest --silent"
     },
-    "peerDependencies": {
-        "@sprig/edit-operation": "0.1.12",
-        "@sprig/edit-queue": "0.1.12",
-        "@sprig/event-emitter": "0.1.12"
+    "dependencies": {
+        "@sprig/edit-operation": "0.1.13",
+        "@sprig/edit-queue": "0.1.13",
+        "@sprig/event-emitter": "0.1.13"
     }
 }
