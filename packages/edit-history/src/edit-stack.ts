@@ -23,6 +23,11 @@ export class EditStack {
         return undefined;
     }
 
+    /** Removes the top item from the stack without publishing. */
+    pop(): IEditStackItem | undefined {
+        return this.undoStack.pop();
+    }
+
     /**
      * Pushes a set of edit operations onto the stack representing a single transactional edit.
      * When performing an undo/redo the entire set of edits will be rolled back as one operation.

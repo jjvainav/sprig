@@ -98,6 +98,11 @@ export class EditHistory implements IEditHistory {
             this.editStack.canRedo();
     }
 
+    /** Removes the top item from the edit history without publishing. */
+    pop(): void {
+        this.editStack.pop();
+    }
+
     undo(): Promise<void> {
         return this.queueUndoRedo(
             this.canUndo.bind(this),
