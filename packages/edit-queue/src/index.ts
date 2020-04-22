@@ -21,6 +21,7 @@ export interface IEditPublishedEvent {
 export interface IEditsPublishedEvent {
     readonly channel: IEditChannel;
     readonly edits: IEditOperation[];
+    readonly reverse: IEditOperation[];
 }
 
 export interface IEditTransactionEvent {
@@ -177,7 +178,11 @@ export class EditQueue implements IEditQueue {
                 transaction.onPublishingEdit(event => queue.publishingEdit.emit(event));
                 transaction.onFinalized(event => {
                     if (event.result.isCommitted) {
-                        queue.publishedEdits.emit({ channel: this, edits: event.result.edits });
+                        queue.publishedEdits.emit({ 
+                            channel: this, 
+                            edits: event.result.edits,
+                            reverse: event.result.reverse
+                        });
                     }
 
                     this.transactionEnded.emit({ result: event.result });
