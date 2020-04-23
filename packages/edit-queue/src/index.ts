@@ -370,8 +370,6 @@ class EditTransactionContext implements IEditTransaction {
                 this.publishingEdit.emit({ channel: this.channel, edit, cancel: queue.abort.bind(queue) });
             },
             (edit, reverse) => {
-                // TODO: need to come up with a strategy for printing debug info to the console
-                console.log("publish - success:", (<Object>edit).constructor.name);
                 this.processedEdit.emit({ edit });
                 this.edits.push(edit);
                 this.reverse.push(...reverse);
@@ -379,7 +377,6 @@ class EditTransactionContext implements IEditTransaction {
             (edit, reason) => {
                 this.hasFailedEdit = true;
                 this.processedEdit.emit({ edit });
-                console.log("publish - failed:", (<Object>edit).constructor.name, reason);
             },
             () => {
                 if (!this.isActive) {

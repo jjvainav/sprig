@@ -28,6 +28,31 @@ describe("edit history", async () => {
         expect(edits[1].type).toBe("mock.reverse");
     });
 
+    test("undo using different incoming and outgoing channels", async () => {
+        const edits: IEditOperation[] = [];
+        const queue = new EditQueue(mockDispatcher(edits));
+        const incoming = queue.createChannel();
+        const outgoing = queue.createChannel();
+        const history = new EditHistory(incoming, outgoing);
+    
+        let incomingCount = 0;
+        incoming.onPublishedEdits(() => incomingCount++);
+
+        let outgoingCount = 0;
+        outgoing.onPublishedEdits(() => outgoingCount++);
+
+        await incoming.publish({ type: "mock.edit" });
+        await history.undo();
+
+        // 1 for the initial publish and 1 for the undo
+        expect(edits).toHaveLength(2);
+
+        expect(incomingCount).toBe(1);
+        expect(outgoingCount).toBe(1);
+        expect(edits[0].type).toBe("mock.edit");
+        expect(edits[1].type).toBe("mock.reverse");
+    });
+
     test("undo multiple edits as a batch", async () => {
         const edits: IEditOperation[] = [];
         const channel = new EditQueue(mockDispatcher(edits)).createChannel();

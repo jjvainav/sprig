@@ -49,6 +49,8 @@ export class EditHistory implements IEditHistory {
     private readonly listeners: IEventListener[] = [];
     private readonly editStack = new EditStack();
     private readonly queue = new AsyncQueue();
+    private readonly _in: IEditChannel;
+    private readonly _out: IEditChannel;
 
     private openTransactionCount = 0;
 
@@ -58,9 +60,12 @@ export class EditHistory implements IEditHistory {
     private _checkpoint = initialCheckpoint;
     private _revision = initialCheckpoint;
 
-    constructor(private readonly channel: IEditChannel) {
-        this.listeners.push(this.channel.onTransactionStarted(() => this.openTransactionCount++));
-        this.listeners.push(this.channel.onTransactionEnded(this.onTransactionEnded.bind(this)));
+    constructor(incoming: IEditChannel, outgoing?: IEditChannel) {
+        this._in = incoming;
+        this._out = outgoing || incoming;
+
+        this.listeners.push(this._in.onTransactionStarted(() => this.openTransactionCount++));
+        this.listeners.push(this._in.onTransactionEnded(this.onTransactionEnded.bind(this)));
     }
 
     get isUndo(): boolean {
@@ -124,7 +129,7 @@ export class EditHistory implements IEditHistory {
             if (canUndoRedo()) {
                 start();
 
-                return invoke(this.channel).then(() => {
+                return invoke(this._out).then(() => {
                     // update the checkpoint number to the current pointer in the stack
                     this._checkpoint = this.editStack.current ? this.editStack.current.checkpoint : initialCheckpoint;
                     end();
