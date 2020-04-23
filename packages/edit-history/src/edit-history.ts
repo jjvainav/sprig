@@ -1,5 +1,5 @@
 ﻿import { AsyncQueue } from "@sprig/async-queue";
-import { IEditChannel, IEditTransactionEndEvent } from "@sprig/edit-queue";
+import { IEditChannel, IEditTransactionEndEvent, IEditTransactionResult } from "@sprig/edit-queue";
 import { IEventListener } from "@sprig/event-emitter";
 import { EditStack } from "./edit-stack";
 
@@ -12,29 +12,16 @@ export interface IEditHistory {
      * will be the same as the revision number.
      */
     readonly checkpoint: number;
-
     /** Gets the current revision for the history. */
     readonly revision: number;
-
-    /**
-     * Determines if there are any edits that can be reverted.
-     */
+    /** Determines if there are any edits that can be reverted. */
     canUndo(): boolean;
-
-    /**
-     * Determines if there are any edits that can be re-published.
-     */
+    /** Determines if there are any edits that can be re-published. */
     canRedo(): boolean;
-
-    /**
-     * Reverts one level of edits.
-     */
-    undo(): Promise<void>;
-
-    /**
-     * Republishes one level of edits.
-     */
-    redo(): Promise<void>;
+    /** Reverts one level of edits. */
+    undo(): Promise<IEditTransactionResult | undefined>;
+    /** Republishes one level of edits. */
+    redo(): Promise<IEditTransactionResult | undefined>;
 }
 
 const initialCheckpoint = 1;
@@ -47,7 +34,7 @@ const initialCheckpoint = 1;
 export class EditHistory implements IEditHistory {
     private readonly listeners: IEventListener[] = [];
     private readonly editStack = new EditStack();
-    private readonly queue = new AsyncQueue();
+    private readonly queue = new AsyncQueue<IEditTransactionResult | undefined>();
     private readonly _in: IEditChannel;
     private readonly _out: IEditChannel;
 
@@ -107,7 +94,7 @@ export class EditHistory implements IEditHistory {
         this.editStack.pop();
     }
 
-    undo(): Promise<void> {
+    undo(): Promise<IEditTransactionResult | undefined> {
         return this.queueUndoRedo(
             this.canUndo.bind(this),
             () => this._isUndo = true,
@@ -115,7 +102,7 @@ export class EditHistory implements IEditHistory {
             this.editStack.undo.bind(this.editStack));
     }
 
-    redo(): Promise<void> {
+    redo(): Promise<IEditTransactionResult | undefined> {
         return this.queueUndoRedo(
             this.canRedo.bind(this),
             () => this._isRedo = true,
@@ -123,19 +110,20 @@ export class EditHistory implements IEditHistory {
             this.editStack.redo.bind(this.editStack));
     }
 
-    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (channel: IEditChannel) => Promise<void>): Promise<void> {
+    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (channel: IEditChannel) => Promise<IEditTransactionResult | undefined>): Promise<IEditTransactionResult | undefined> {
         return this.queue.push(() => {
             if (canUndoRedo()) {
                 start();
 
-                return invoke(this._out).then(() => {
+                return invoke(this._out).then(result => {
                     // update the checkpoint number to the current pointer in the stack
                     this._checkpoint = this.editStack.current ? this.editStack.current.checkpoint : initialCheckpoint;
                     end();
+                    return result;
                 });
             }
 
-            return Promise.resolve();
+            return Promise.resolve(undefined);
         });
     }
 

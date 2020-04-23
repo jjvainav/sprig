@@ -1,5 +1,5 @@
 ﻿import { IEditOperation } from "@sprig/edit-operation";
-import { IEditChannel } from "@sprig/edit-queue";
+import { IEditChannel, IEditTransactionResult } from "@sprig/edit-queue";
 
 export interface IEditStackItem {
     readonly checkpoint: number;
@@ -52,15 +52,15 @@ export class EditStack {
         return this.redoStack.length > 0;
     }
 
-    undo(channel: IEditChannel): Promise<void> {
+    undo(channel: IEditChannel): Promise<IEditTransactionResult | undefined> {
         return this.handleUndoRedo(channel, this.undoStack, this.redoStack);
     }
 
-    redo(channel: IEditChannel): Promise<void> {
+    redo(channel: IEditChannel): Promise<IEditTransactionResult | undefined> {
         return this.handleUndoRedo(channel, this.redoStack, this.undoStack);
     }
 
-    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<void> {
+    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditTransactionResult | undefined> {
         const item = source.pop();
 
         if (item) {
@@ -75,9 +75,11 @@ export class EditStack {
                 if (result.isCommitted) {
                     target.push({ checkpoint: item.checkpoint, edits: result.reverse });
                 }
+
+                return result;
             });
         }
 
-        return Promise.resolve();
+        return Promise.resolve(undefined);
     }
 }
