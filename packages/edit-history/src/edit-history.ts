@@ -1,6 +1,5 @@
-﻿//import { Disposable, ProcessQueue } from "@lib/common";
-import { AsyncQueue } from "@sprig/async-queue";
-import { IEditChannel, IEditTransactionEvent } from "@sprig/edit-queue";
+﻿import { AsyncQueue } from "@sprig/async-queue";
+import { IEditChannel, IEditTransactionEndEvent } from "@sprig/edit-queue";
 import { IEventListener } from "@sprig/event-emitter";
 import { EditStack } from "./edit-stack";
 
@@ -140,7 +139,7 @@ export class EditHistory implements IEditHistory {
         });
     }
 
-    private onTransactionEnded(event: IEditTransactionEvent): void {
+    private onTransactionEnded(event: IEditTransactionEndEvent): void {
         if (!this._isUndo && !this._isRedo) {
             // make sure the transaction was successful and 'reverse' edits are included
             if (event.result.isCommitted && event.result.reverse.length > 0) {
