@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-circuit-breaker",
     "description": "Request client interceptors for circuit breaker support.",
-    "version": "0.1.17",
+    "version": "0.1.18",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,10 +21,10 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.1.17"
+        "@sprig/request-client": "0.1.18"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.1.17",
-        "@sprig/request-client-retry": "0.1.17"
+        "@sprig/request-client-mock": "0.1.18",
+        "@sprig/request-client-retry": "0.1.18"
     }
 }
