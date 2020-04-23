@@ -24,11 +24,16 @@ export interface IEditsPublishedEvent {
     readonly reverse: IEditOperation[];
 }
 
-export interface IEditTransactionEvent {
+export interface IEditTransactionStartEvent {
+    readonly id: number;
+}
+
+export interface IEditTransactionEndEvent {
     readonly result: IEditTransactionResult;
 }
 
 export interface IEditTransactionResult {
+    readonly id: number;
     readonly isAborted: boolean;
     readonly isCommitted: boolean;
     readonly edits: IEditOperation[];
@@ -40,17 +45,16 @@ export interface IEditTransactionScope {
 }
 
 export interface IEditTransaction {
-    readonly onCompleted: IEvent<IEditTransactionEvent>;
-
+    /** An event that is raised when the transaction has completed. */
+    readonly onCompleted: IEvent<IEditTransactionEndEvent>;
+    /** A unique id associated with the transaction. */
+    readonly id: number;
     /** Gets whether or not the transaction has successfully been committed. */
     readonly isCommitted: boolean;
-
     /** Gets whether or not the transaction is active, i.e. the transaction is still expecting edits to be published. */
     readonly isActive: boolean;
-
     /** Gets whether or not the transaction is waiting on pending edits to complete before finalizing/ending the transaction */
     readonly isFinalizing: boolean;
-
     /** Gets whether or not the transaction has been finalized, i.e. the transaction is no longer active and all pending edits have been processed. */
     readonly isFinalized: boolean;
 
@@ -87,8 +91,8 @@ export interface IEditQueue extends IEditQueueEvents {
 }
 
 export interface IEditChannel extends IEditQueueEvents {
-    readonly onTransactionStarted: IEvent;
-    readonly onTransactionEnded: IEvent<IEditTransactionEvent>;
+    readonly onTransactionStarted: IEvent<IEditTransactionStartEvent>;
+    readonly onTransactionEnded: IEvent<IEditTransactionEndEvent>;
     /** Creates and starts a new transaction that allows bulk edits to be published as a single transaction. */
     beginTransaction(): IEditTransaction;
     /** Closes the current channel. */
@@ -132,8 +136,8 @@ export class EditQueue implements IEditQueue {
     createChannel(): IEditChannel {
         const queue = this;
         return new class implements IEditChannel {
-            private readonly transactionStarted = new EventEmitter("transaction-started");
-            private readonly transactionEnded = new EventEmitter<IEditTransactionEvent>("transaction-ended");
+            private readonly transactionStarted = new EventEmitter<IEditTransactionStartEvent>("transaction-started");
+            private readonly transactionEnded = new EventEmitter<IEditTransactionEndEvent>("transaction-ended");
 
             /*
              * Edits inside a channel are expected to be executed sequentially but since they are async
@@ -148,11 +152,11 @@ export class EditQueue implements IEditQueue {
                 queue.channels.add(this);
             }
 
-            get onTransactionStarted(): IEvent {
+            get onTransactionStarted(): IEvent<IEditTransactionStartEvent> {
                 return this.transactionStarted.event;
             }
 
-            get onTransactionEnded(): IEvent<IEditTransactionEvent> {
+            get onTransactionEnded(): IEvent<IEditTransactionEndEvent> {
                 return this.transactionEnded.event;
             }
 
@@ -192,7 +196,7 @@ export class EditQueue implements IEditQueue {
 
                 this.queue.push(transaction, transaction => {
                     transaction.start();
-                    this.transactionStarted.emit();
+                    this.transactionStarted.emit({ id: transaction.id });
                 });
 
                 return transaction;
@@ -230,6 +234,8 @@ export class EditQueue implements IEditQueue {
 
 /** Provides long-running transaction support for dispatched edits. */
 class EditTransactionContext implements IEditTransaction {
+    private static nextId = 1;
+
     // used internally to resolve a transaction publish promise
     private readonly processedEdit = new EventEmitter<IProcessedEditEvent>("processed-edit");
     private readonly publishingEdit = new EventEmitter<IEditPublishingEvent>("publishing-edit");
@@ -238,9 +244,9 @@ class EditTransactionContext implements IEditTransaction {
     // 1) finalizing - used internally by the transaction queue
     // 2) completed - gets exposed through the public API
     // 3) finalized - used internally by the edit channel 
-    private readonly completed = new EventEmitter<IEditTransactionEvent>("transaction-completed");
-    private readonly finalizing = new EventEmitter<IEditTransactionEvent>("transaction-finalizing");
-    private readonly finalized = new EventEmitter<IEditTransactionEvent>("transaction-finalized");
+    private readonly completed = new EventEmitter<IEditTransactionEndEvent>("transaction-completed");
+    private readonly finalizing = new EventEmitter<IEditTransactionEndEvent>("transaction-finalizing");
+    private readonly finalized = new EventEmitter<IEditTransactionEndEvent>("transaction-finalized");
 
     private readonly edits: IEditOperation[] = [];
     private readonly reverse: IEditOperation[] = [];
@@ -254,10 +260,13 @@ class EditTransactionContext implements IEditTransaction {
     private _isCommitted = false;
     private isRunning = false;
     private hasFailedEdit = false;
+
+    readonly id: number;
     
     constructor(
         private readonly channel: IEditChannel,
         private readonly dispatcher: IEditDispatcher) {
+        this.id = EditTransactionContext.nextId++;
         this.queue = this.createPublishQueue();
     }
     
@@ -265,15 +274,15 @@ class EditTransactionContext implements IEditTransaction {
         return this.publishingEdit.event;
     }
 
-    get onCompleted(): IEvent<IEditTransactionEvent> {
+    get onCompleted(): IEvent<IEditTransactionEndEvent> {
         return this.completed.event;
     }
 
-    get onFinalizing(): IEvent<IEditTransactionEvent> {
+    get onFinalizing(): IEvent<IEditTransactionEndEvent> {
         return this.finalizing.event;
     }
 
-    get onFinalized(): IEvent<IEditTransactionEvent> {
+    get onFinalized(): IEvent<IEditTransactionEndEvent> {
         return this.finalized.event;
     }
 
@@ -401,6 +410,7 @@ class EditTransactionContext implements IEditTransaction {
     private onCommit(callback: (result: IEditTransactionResult) => void): void {
         this._isCommitted = true;
         callback({
+            id: this.id,
             isAborted: false,
             isCommitted: true,
             edits: this.edits,
@@ -411,6 +421,7 @@ class EditTransactionContext implements IEditTransaction {
     private onRollback(callback: (result: IEditTransactionResult) => void): void {
         if (!this.reverse.length) {
             callback({
+                id: this.id,
                 isAborted: true,
                 isCommitted: false,
                 edits: this.edits,
@@ -432,6 +443,7 @@ class EditTransactionContext implements IEditTransaction {
             },
             // once the queue has gone idle all the reverse edits have been processed
             () => callback({
+                id: this.id,
                 isAborted: true,
                 isCommitted: false,
                 edits: this.edits,

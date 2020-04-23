@@ -87,6 +87,8 @@ describe("edit queue", () => {
         expect(results).toHaveLength(2);
         expect(results[0]).toBe("edit 1");
         expect(results[1]).toBe("edit 2");
+        // ensure the transaction ids are different
+        expect(result1.id).not.toBe(result2.id);
     });
 
     test("publish multiple edits to channel as batch", async () => {
@@ -224,10 +226,10 @@ describe("edit queue", () => {
     test("publish edits with multiple open transactions", done => {
         const queue = new EditQueue(mockDispatcher());
         const channel = queue.createChannel();
-        const results: IEditOperation[] = [];
+        const results: IEditTransactionResult[] = [];
 
         channel.onTransactionEnded(event => {
-            results.push(...event.result.edits);
+            results.push(event.result);
 
             if (results.length === 2) {
                 doAssert();
@@ -246,8 +248,11 @@ describe("edit queue", () => {
         transaction1.end();
 
         const doAssert = () => assert(done, () => {
-            expect((<IMockEditOperation>results[0]).value).toBe("bar");
-            expect((<IMockEditOperation>results[1]).value).toBe("foo");
+            expect(results[0].id).toBe(transaction1.id);
+            expect((<IMockEditOperation>results[0].edits[0]).value).toBe("bar");
+
+            expect(results[1].id).toBe(transaction2.id);
+            expect((<IMockEditOperation>results[1].edits[0]).value).toBe("foo");
         });
     });
 
