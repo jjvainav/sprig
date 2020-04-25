@@ -13,6 +13,7 @@ export type EditSplitterMap<TModel, TEdit extends IEditOperation, TEditToSplit e
 /** Represents an edit operation for a model. */
 export interface IEditOperation {
     readonly type: string;
+    readonly data: any;
 }
 
 export interface IEditContext<TModel> {

@@ -24,83 +24,105 @@ interface ITodoItem {
 
 interface ICompositeEdit extends IEditOperation {
     readonly type: "composite";
-    readonly edits: EditOperations[];
+    readonly data: {
+        readonly edits: EditOperations[];
+    };
 }
 
 interface IUpdateListName extends IEditOperation {
     readonly type: "list.name";
-    readonly listId: string;
-    readonly name: string;
+    readonly data: {
+        readonly listId: string;
+        readonly name: string;
+    };
 }
 
 interface ICreateTodo extends IEditOperation {
     readonly type: "todo.create";
-    readonly id: string;
-    readonly title: string;
-    readonly completed: boolean;
+    readonly data: {
+        readonly id: string;
+        readonly title: string;
+        readonly completed: boolean;
+    };
 }
 
 interface IDeleteTodo extends IEditOperation {
     readonly type: "todo.delete";
-    readonly id: string;
+    readonly data: {
+        readonly id: string;
+    };
 }
 
 interface IUpdateTodoCompleted extends IEditOperation {
     readonly type: "todo.completed";
-    readonly todoId: string;
-    readonly completed: boolean;
+    readonly data: {
+        readonly todoId: string;
+        readonly completed: boolean;
+    };
 }
 
 const todoListScope = defineScope<ITodoManager, ITodoList>("list");
-const todoItemScope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+const todoItemScope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
 
 const handleUpdateListName: IEditHandler<ITodoList, IUpdateListName> = (context, model, edit) => {
-    context.save({ ...model, name: edit.name });
-    return updateListName(edit.listId, model.name);
+    context.save({ ...model, name: edit.data.name });
+    return updateListName(edit.data.listId, model.name);
 };
 
 const handleCreateTodo: IEditHandler<ITodoList, ICreateTodo> = (context, model, edit) => {
     context.save({
         ...model,
         todos: [...model.todos, {
-            id: edit.id,
-            title: edit.title,
-            completed: edit.completed
+            id: edit.data.id,
+            title: edit.data.title,
+            completed: edit.data.completed
         }]
     });
 
-    return deleteTodo(edit.id);
+    return deleteTodo(edit.data.id);
 };
 
 const handleDeleteTodo: IEditHandler<ITodoList, IDeleteTodo> = (context, model, edit) => {
     context.save({
         ...model,
-        todos: model.todos.filter(todo => todo.id !== edit.id)
+        todos: model.todos.filter(todo => todo.id !== edit.data.id)
     });
 
-    const todo = model.todos.filter(todo => todo.id === edit.id)[0];
-    return createTodo(edit.id, todo.title, todo.completed);
+    const todo = model.todos.filter(todo => todo.id === edit.data.id)[0];
+    return createTodo(edit.data.id, todo.title, todo.completed);
 }
 
 const handleUpdateTodoCompleted: IEditHandler<ITodoItem, IUpdateTodoCompleted> = (context, model, edit) => {
-    context.save({ ...model, completed: edit.completed });
-    return updateTodoCompleted(edit.todoId, !edit.completed);
+    context.save({ ...model, completed: edit.data.completed });
+    return updateTodoCompleted(edit.data.todoId, !edit.data.completed);
 };
 
 function createTodo(id: string, title: string, completed: boolean): ICreateTodo {
-    return { type: "todo.create", id, title, completed };
+    return { 
+        type: "todo.create", 
+        data: { id, title, completed }
+    };
 }
 
 function deleteTodo(id: string): IDeleteTodo {
-    return { type: "todo.delete", id };
+    return { 
+        type: "todo.delete", 
+        data: { id }
+    };
 }
 
 function updateListName(listId: string, name: string): IUpdateListName {
-    return { type: "list.name", listId, name };
+    return { 
+        type: "list.name", 
+        data: { listId, name }
+    };
 }
 
 function updateTodoCompleted(todoId: string, completed: boolean): IUpdateTodoCompleted {
-    return { type: "todo.completed", todoId, completed };
+    return { 
+        type: "todo.completed", 
+        data: { todoId, completed }
+    };
 }
 
 describe("edit handler extensions", () => {
@@ -111,7 +133,7 @@ describe("edit handler extensions", () => {
             "todo.create": handleCreateTodo,
             "todo.delete": handleDeleteTodo
         }), {
-            "composite": (model, edit) => edit.edits
+            "composite": (model, edit) => edit.data.edits
         });
 
         let model: ITodoList = {
@@ -127,12 +149,14 @@ describe("edit handler extensions", () => {
         handler(context, model, updateListName("1", "my list"));
         handler(context, model, {
             type: "composite",
-            edits: [
-                createTodo("1", "todo 1", false),
-                createTodo("2", "todo 2", false),
-                updateTodoCompleted("1", true),
-                deleteTodo("2")
-            ]
+            data: {
+                edits: [
+                    createTodo("1", "todo 1", false),
+                    createTodo("2", "todo 2", false),
+                    updateTodoCompleted("1", true),
+                    deleteTodo("2")
+                ]
+            }
         });
 
         expect(model.name).toBe("my list");
@@ -156,14 +180,14 @@ describe("edit scope", () => {
             }
         };
 
-        const result = scope.get(model, { type: "" });
+        const result = scope.get(model, { type: "", data: {} });
 
         expect(result).toHaveLength(1);
         expect(result[0]).toBe(model.list);
     });
 
     test("get object from simple array scope", () => {
-        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
         const model = {
             id: "1",
             name: "test",
@@ -180,7 +204,7 @@ describe("edit scope", () => {
     });
 
     test("get object from simple array scope with multiple matches", () => {
-        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
         const model = {
             id: "1",
             name: "test",
@@ -199,7 +223,7 @@ describe("edit scope", () => {
 
     test("get object from combined scope", () => {
         const outer = defineScope<ITodoManager, ITodoList>("list");
-        const inner = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+        const inner = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
         const scope = combineScopes(outer, inner);
         const model = {
             list: {
@@ -231,14 +255,14 @@ describe("edit scope", () => {
             }
         };
 
-        const result = scope.save(model, { type: "" }, item => ({ ...item, name: "foo" }));
+        const result = scope.save(model, { type: "", data: {} }, item => ({ ...item, name: "foo" }));
 
         expect(result).not.toBe(model);
         expect(result.list.name).toBe("foo");
     });
 
     test("save object with simple array scope", () => {
-        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
         const model = {
             id: "1",
             name: "test",
@@ -256,7 +280,7 @@ describe("edit scope", () => {
     });
 
     test("save object with simple array scope with multiple matches", () => {
-        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+        const scope = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
         const model = {
             id: "1",
             name: "test",
@@ -278,7 +302,7 @@ describe("edit scope", () => {
 
     test("save object with combined scope", () => {
         const outer = defineScope<ITodoManager, ITodoList>("list");
-        const inner = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId }));
+        const inner = defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId }));
         const scope = combineScopes(outer, inner);
         const model = {
             list: {
@@ -302,7 +326,7 @@ describe("edit scope", () => {
         const scope = combineScopes(
             defineScope<ITodoRoot, ITodoManager>("manager"),
             defineScope<ITodoManager, ITodoList>("list"), 
-            defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.todoId })));
+            defineScope<ITodoList, ITodoItem, IUpdateTodoCompleted>("todos", edit => ({ id: edit.data.todoId })));
         const model = {
             manager: {
                 list: {

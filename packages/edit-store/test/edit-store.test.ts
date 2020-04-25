@@ -12,19 +12,24 @@ interface IState {
 
 interface IUpdateItem extends IEditOperation {
     readonly type: "item.update";
-    readonly itemId: string;
-    readonly value: string;
+    readonly data: {
+        readonly itemId: string;
+        readonly value: string;
+    };
 }
 
-const itemScope = defineScope<IState, IItem, IUpdateItem>("items", edit => ({ id: edit.itemId }));
+const itemScope = defineScope<IState, IItem, IUpdateItem>("items", edit => ({ id: edit.data.itemId }));
 
 const handleUpdateItem: IEditHandler<IItem, IUpdateItem> = (context, model, edit) => {
-    context.save({ ...model, value: edit.value });
-    return updateItem(edit.itemId, model.value);
+    context.save({ ...model, value: edit.data.value });
+    return updateItem(edit.data.itemId, model.value);
 };
 
 function updateItem(itemId: string, value: string): IUpdateItem {
-    return { type: "item.update", itemId, value };
+    return { 
+        type: "item.update", 
+        data: { itemId, value }
+    };
 }
 
 describe("edit store", () => {

@@ -26,99 +26,115 @@ interface ITodoItem {
 
 interface IAddTodo extends IEditOperation {
     readonly type: "list.add";
-    readonly listId: string;
-    readonly todoId: string;
+    readonly data: {
+        readonly listId: string;
+        readonly todoId: string;
+    };
 }
 
 interface IRemoveTodo extends IEditOperation {
     readonly type: "list.remove";
-    readonly listId: string;
-    readonly todoId: string;
+    readonly data: {
+        readonly listId: string;
+        readonly todoId: string;
+    };
 }
 
 interface ICreateList extends IEditOperation {
     readonly type: "list.create";
-    readonly listId: string;
-    readonly name: string;
-    readonly todos: string[];
+    readonly data: {
+        readonly listId: string;
+        readonly name: string;
+        readonly todos: string[];
+    };
 }
 
 interface IDeleteList extends IEditOperation {
     readonly type: "list.delete";
-    readonly listId: string;
+    readonly data: {
+        readonly listId: string;
+    };
 }
 
 interface IUpdateListName extends IEditOperation {
     readonly type: "list.name";
-    readonly listId: string;
-    readonly name: string;
+    readonly data: {
+        readonly listId: string;
+        readonly name: string;
+    };
 }
 
 interface ICreateTodo extends IEditOperation {
     readonly type: "todo.create";
-    readonly todoId: string;
-    readonly title: string;
-    readonly completed: boolean;
+    readonly data: {
+        readonly todoId: string;
+        readonly title: string;
+        readonly completed: boolean;
+    };
 }
 
 interface IDeleteTodo extends IEditOperation {
     readonly type: "todo.delete";
-    readonly todoId: string;
+    readonly data: {
+        readonly todoId: string;
+    };
 }
 
 interface IUpdateTodoCompleted extends IEditOperation {
     readonly type: "todo.completed";
-    readonly todoId: string;
-    readonly completed: boolean;
+    readonly data: {
+        readonly todoId: string;
+        readonly completed: boolean;
+    };
 }
 
 const todoListCollectionScope = defineScope<ITodoState, ICollection<ITodoList>>("lists");
-const todoListScope = defineScope<ITodoState, ITodoList, ListEditOperations>("lists", edit => ({ id: edit.listId }));
+const todoListScope = defineScope<ITodoState, ITodoList, ListEditOperations>("lists", edit => ({ id: edit.data.listId }));
 
 const todoItemCollectionScope = defineScope<ITodoState, ICollection<ITodoItem>>("items");
-const todoItemScope = defineScope<ITodoState, ITodoItem, ItemEditOperations>("items", edit => ({ id: edit.todoId }));
+const todoItemScope = defineScope<ITodoState, ITodoItem, ItemEditOperations>("items", edit => ({ id: edit.data.todoId }));
 
 const handleAddTodo: IEditHandler<ITodoList, IAddTodo> = (context, model, edit) => {
     context.save({ 
         ...model, 
-        todos: [...model.todos, edit.todoId]
+        todos: [...model.todos, edit.data.todoId]
     });
 
-    return removeTodo(edit.listId, edit.todoId);
+    return removeTodo(edit.data.listId, edit.data.todoId);
 };
 
 const handleRemoveTodo: IEditHandler<ITodoList, IRemoveTodo> = (context, model, edit) => {
     context.save({ 
         ...model, 
-        todos: model.todos.filter(id => id !== edit.todoId)
+        todos: model.todos.filter(id => id !== edit.data.todoId)
     });
 
-    return addTodo(edit.listId, edit.todoId);
+    return addTodo(edit.data.listId, edit.data.todoId);
 };
 
 const handleCreateList: IEditHandler<ICollection<ITodoList>, ICreateList> = (context, model, edit) => {
     context.save(model.insert({  
-        id: edit.listId,
-        name: edit.name,
-        todos: edit.todos
+        id: edit.data.listId,
+        name: edit.data.name,
+        todos: edit.data.todos
     }));
 
-    return deleteList(edit.listId);
+    return deleteList(edit.data.listId);
 };
 
 const handleDeleteList: IEditHandler<ICollection<ITodoList>, IDeleteList> = (context, model, edit) => {
-    const list = model.find({ id: edit.listId })!;
-    context.save(model.delete({ id: edit.listId }));
+    const list = model.find({ id: edit.data.listId })!;
+    context.save(model.delete({ id: edit.data.listId }));
     return createList(list.id, list.name, list.todos);    
 };
 
 const handleDeleteListAndChildren: IEditHandler<ITodoState, IDeleteList> = (context, model, edit) => {
-    const list = model.lists.find({ id: edit.listId })!;
+    const list = model.lists.find({ id: edit.data.listId })!;
     const reverse: IEditOperation[] = [createList(list.id, list.name, list.todos)];
 
     let newState = {
         ...model,
-        lists: model.lists.delete({ id: edit.listId })
+        lists: model.lists.delete({ id: edit.data.listId })
     };
 
     for (const id of list.todos) {
@@ -138,61 +154,85 @@ const handleDeleteListAndChildren: IEditHandler<ITodoState, IDeleteList> = (cont
 };
 
 const handleUpdateListName: IEditHandler<ITodoList, IUpdateListName> = (context, model, edit) => {
-    context.save({ ...model!, name: edit.name });
-    return updateListName(edit.listId, model.name);
+    context.save({ ...model!, name: edit.data.name });
+    return updateListName(edit.data.listId, model.name);
 };
 
 const handleCreateTodo: IEditHandler<ICollection<ITodoItem>, ICreateTodo> = (context, model, edit) => {
     context.save(model.insert({
-        id: edit.todoId,
-        title: edit.title,
-        completed: edit.completed
+        id: edit.data.todoId,
+        title: edit.data.title,
+        completed: edit.data.completed
     }));
 
-    return deleteTodo(edit.todoId);
+    return deleteTodo(edit.data.todoId);
 };
 
 const handleDeleteTodo: IEditHandler<ICollection<ITodoItem>, IDeleteTodo> = (context, model, edit) => {
-    const todo = model.find({ id: edit.todoId })!;
-    context.save(model.delete({ id: edit.todoId }));
-    return createTodo(edit.todoId, todo.title, todo.completed);
+    const todo = model.find({ id: edit.data.todoId })!;
+    context.save(model.delete({ id: edit.data.todoId }));
+    return createTodo(edit.data.todoId, todo.title, todo.completed);
 }
 
 const handleUpdateTodoCompleted: IEditHandler<ITodoItem, IUpdateTodoCompleted> = (context, model, edit) => {
-    context.save({ ...model, completed: edit.completed });
-    return updateTodoCompleted(edit.todoId, !edit.completed);
+    context.save({ ...model, completed: edit.data.completed });
+    return updateTodoCompleted(edit.data.todoId, !edit.data.completed);
 };
 
 function createList(listId: string, name: string, todos: string[]): ICreateList {
-    return { type: "list.create", listId, name, todos };
+    return { 
+        type: "list.create", 
+        data: { listId, name, todos }
+    };
 }
 
 function deleteList(listId: string): IDeleteList {
-    return { type: "list.delete", listId };
+    return { 
+        type: "list.delete", 
+        data: { listId } 
+    };
 }
 
 function addTodo(listId: string, todoId: string): IAddTodo {
-    return { type: "list.add", listId, todoId };
+    return { 
+        type: "list.add", 
+        data: { listId, todoId }
+    };
 }
 
 function removeTodo(listId: string, todoId: string): IRemoveTodo {
-    return { type: "list.remove", listId, todoId };
+    return { 
+        type: "list.remove", 
+        data: { listId, todoId }
+    };
 }
 
 function createTodo(todoId: string, title: string, completed: boolean): ICreateTodo {
-    return { type: "todo.create", todoId, title, completed };
+    return { 
+        type: "todo.create", 
+        data: { todoId, title, completed }
+    };
 }
 
 function deleteTodo(todoId: string): IDeleteTodo {
-    return { type: "todo.delete", todoId };
+    return { 
+        type: "todo.delete", 
+        data: { todoId }
+    };
 }
 
 function updateListName(listId: string, name: string): IUpdateListName {
-    return { type: "list.name", listId, name };
+    return { 
+        type: "list.name", 
+        data: { listId, name }
+    };
 }
 
 function updateTodoCompleted(todoId: string, completed: boolean): IUpdateTodoCompleted {
-    return { type: "todo.completed", todoId, completed };
+    return { 
+        type: "todo.completed", 
+        data: { todoId, completed }
+    };
 }
 
 describe("edit operation - normalized", () => {
@@ -287,7 +327,7 @@ describe("edit operation - normalized", () => {
             "todo.delete": createScopedHandler(handleDeleteTodo, todoItemCollectionScope)
         }), {
             "list.delete": (model, edit) => {
-                const list = model.lists.find({ id: edit.listId })!;
+                const list = model.lists.find({ id: edit.data.listId })!;
                 return list.todos.reduce((acc, cur) => acc.concat(deleteTodo(cur)), <(IDeleteList | IDeleteTodo)[]>[edit]);
             }
         });
@@ -322,8 +362,8 @@ describe("edit operation - normalized", () => {
             "todo.delete": createScopedHandler(handleDeleteTodo, todoItemCollectionScope)
         }), {
             "todo.delete": (model, edit) => {
-                const lists = model.lists.findAll({ todos: edit.todoId });
-                return lists.reduce((acc, cur) => acc.concat(removeTodo(cur.id, edit.todoId)), <(IDeleteList | IDeleteTodo | IRemoveTodo)[]>[edit]);
+                const lists = model.lists.findAll({ todos: edit.data.todoId });
+                return lists.reduce((acc, cur) => acc.concat(removeTodo(cur.id, edit.data.todoId)), <(IDeleteList | IDeleteTodo | IRemoveTodo)[]>[edit]);
             }
         });
 

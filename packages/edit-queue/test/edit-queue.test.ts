@@ -4,15 +4,17 @@ import { EditQueue, IEditDispatcher, IEditTransactionResult } from "../src";
 
 interface IMockEditOperation extends IEditOperation {
     readonly type: "mock";
-    readonly delay?: number; 
-    readonly error?: Error;
-    readonly value?: string;
+    readonly data: {
+        readonly delay?: number; 
+        readonly error?: Error;
+        readonly value?: string;
+    };
 }
 
 const rejectDispatcher: IEditDispatcher = () => Promise.reject("Edit rejected");
 const mockDispatcher: (out?: IEditOperation[]) => IEditDispatcher = out => edit => {
-    const amount = (<IMockEditOperation>edit).delay;
-    const error = (<IMockEditOperation>edit).error;
+    const amount = (<IMockEditOperation>edit).data.delay;
+    const error = (<IMockEditOperation>edit).data.error;
 
     if (out) {
         out.push(edit);
@@ -36,7 +38,10 @@ const mockDispatcher: (out?: IEditOperation[]) => IEditDispatcher = out => edit 
 };
 
 function mockEdit(delay?: number, value?: string, error?: Error): IMockEditOperation {
-    return { type: "mock", delay, value, error };
+    return { 
+        type: "mock", 
+        data: { delay, value, error }
+    };
 }
 
 function assert(done: jest.DoneCallback, callback: () => void): void {
@@ -79,10 +84,10 @@ describe("edit queue", () => {
         const results: string[] = [];
         
         const result1 = await channel.publish(mockEdit(0, "edit 1"));
-        results.push((<IMockEditOperation>result1.edits[0]).value!);
+        results.push((<IMockEditOperation>result1.edits[0]).data.value!);
 
         const result2 = await channel.publish(mockEdit(undefined, "edit 2"));
-        results.push((<IMockEditOperation>result2.edits[0]).value!);
+        results.push((<IMockEditOperation>result2.edits[0]).data.value!);
 
         expect(results).toHaveLength(2);
         expect(results[0]).toBe("edit 1");
@@ -106,9 +111,9 @@ describe("edit queue", () => {
         expect(result.isCommitted).toBeTruthy();
         expect(result.edits.length).toBe(3);
 
-        expect((<IMockEditOperation>result.edits[0]).value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).value).toBe("Edit 3");
+        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
+        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
+        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
     });
 
     test("publish multiple async edits to channel as batch", async () => {
@@ -126,9 +131,9 @@ describe("edit queue", () => {
         expect(result.isCommitted).toBeTruthy();
         expect(result.edits.length).toBe(3);
 
-        expect((<IMockEditOperation>result.edits[0]).value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).value).toBe("Edit 3");
+        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
+        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
+        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
     });
 
     test("publish multiple async edits to channel as batch with await", async () => {
@@ -146,9 +151,9 @@ describe("edit queue", () => {
         expect(result.isCommitted).toBeTruthy();
         expect(result.edits.length).toBe(3);
 
-        expect((<IMockEditOperation>result.edits[0]).value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).value).toBe("Edit 3");
+        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
+        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
+        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
     });
 
     test("publish multiple async edits to transaction scope", async () => {
@@ -165,9 +170,9 @@ describe("edit queue", () => {
         expect(result.isCommitted).toBeTruthy();
         expect(result.edits.length).toBe(3);
 
-        expect((<IMockEditOperation>result.edits[0]).value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).value).toBe("Edit 3");
+        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
+        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
+        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
     });
 
     test("publish multiple async edits to transaction scope with await", async () => {
@@ -193,9 +198,9 @@ describe("edit queue", () => {
         expect(result.isCommitted).toBeTruthy();
         expect(result.edits.length).toBe(3);
 
-        expect((<IMockEditOperation>result.edits[0]).value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).value).toBe("Edit 3");
+        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
+        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
+        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
     });
 
     test("publish edit while transaction finalizing", async () => {
@@ -219,8 +224,8 @@ describe("edit queue", () => {
         expect(count).toBe(2);
         expect(results.length).toBe(2);
 
-        expect((<IMockEditOperation>results[0].edits[0]).value).toBe("Edit 1");
-        expect((<IMockEditOperation>results[1].edits[0]).value).toBe("Edit 2");
+        expect((<IMockEditOperation>results[0].edits[0]).data.value).toBe("Edit 1");
+        expect((<IMockEditOperation>results[1].edits[0]).data.value).toBe("Edit 2");
     });
 
     test("publish edits with multiple open transactions", done => {
@@ -249,10 +254,10 @@ describe("edit queue", () => {
 
         const doAssert = () => assert(done, () => {
             expect(results[0].id).toBe(transaction1.id);
-            expect((<IMockEditOperation>results[0].edits[0]).value).toBe("bar");
+            expect((<IMockEditOperation>results[0].edits[0]).data.value).toBe("bar");
 
             expect(results[1].id).toBe(transaction2.id);
-            expect((<IMockEditOperation>results[1].edits[0]).value).toBe("foo");
+            expect((<IMockEditOperation>results[1].edits[0]).data.value).toBe("foo");
         });
     });
 
@@ -275,11 +280,11 @@ describe("edit queue", () => {
         expect(count).toBe(5);
         expect(publishedEdits.length).toBe(5);
 
-        expect(publishedEdits[0].value).toBe("Edit 1");
-        expect(publishedEdits[1].value).toBe("Edit 2");
-        expect(publishedEdits[2].value).toBe("Edit 3");
-        expect(publishedEdits[3].value).toBe("Edit 4");
-        expect(publishedEdits[4].value).toBe("Edit 5");
+        expect(publishedEdits[0].data.value).toBe("Edit 1");
+        expect(publishedEdits[1].data.value).toBe("Edit 2");
+        expect(publishedEdits[2].data.value).toBe("Edit 3");
+        expect(publishedEdits[3].data.value).toBe("Edit 4");
+        expect(publishedEdits[4].data.value).toBe("Edit 5");
     });
 
     test("publish multiple batch edits forcing transactions to queue up", done => {
@@ -313,11 +318,11 @@ describe("edit queue", () => {
             expect(count).toBe(2);
             expect(publishedEdits.length).toBe(5);
 
-            expect(publishedEdits[0].value).toBe("Edit 1");
-            expect(publishedEdits[1].value).toBe("Edit 2");
-            expect(publishedEdits[2].value).toBe("Edit 3");
-            expect(publishedEdits[3].value).toBe("Edit 4");
-            expect(publishedEdits[4].value).toBe("Edit 5");
+            expect(publishedEdits[0].data.value).toBe("Edit 1");
+            expect(publishedEdits[1].data.value).toBe("Edit 2");
+            expect(publishedEdits[2].data.value).toBe("Edit 3");
+            expect(publishedEdits[3].data.value).toBe("Edit 4");
+            expect(publishedEdits[4].data.value).toBe("Edit 5");
         });
     });
 
@@ -355,11 +360,11 @@ describe("edit queue", () => {
             expect(count).toBe(2);
             expect(publishedEdits.length).toBe(5);
 
-            expect(publishedEdits[0].value).toBe("Edit 1");
-            expect(publishedEdits[1].value).toBe("Edit 2");
-            expect(publishedEdits[2].value).toBe("Edit 3");
-            expect(publishedEdits[3].value).toBe("Edit 4");
-            expect(publishedEdits[4].value).toBe("Edit 5");
+            expect(publishedEdits[0].data.value).toBe("Edit 1");
+            expect(publishedEdits[1].data.value).toBe("Edit 2");
+            expect(publishedEdits[2].data.value).toBe("Edit 3");
+            expect(publishedEdits[3].data.value).toBe("Edit 4");
+            expect(publishedEdits[4].data.value).toBe("Edit 5");
         });
     });
 
@@ -394,11 +399,11 @@ describe("edit queue", () => {
             expect(count).toBe(2);
             expect(publishedEdits.length).toBe(5);
 
-            expect(publishedEdits[0].value).toBe("Edit 1");
-            expect(publishedEdits[1].value).toBe("Edit 2");
-            expect(publishedEdits[2].value).toBe("Edit 3");
-            expect(publishedEdits[3].value).toBe("Edit 4");
-            expect(publishedEdits[4].value).toBe("Edit 5");
+            expect(publishedEdits[0].data.value).toBe("Edit 1");
+            expect(publishedEdits[1].data.value).toBe("Edit 2");
+            expect(publishedEdits[2].data.value).toBe("Edit 3");
+            expect(publishedEdits[3].data.value).toBe("Edit 4");
+            expect(publishedEdits[4].data.value).toBe("Edit 5");
         });
     });
 
@@ -439,11 +444,11 @@ describe("edit queue", () => {
             // the dispatcher should have executed 5 edits, the 3 that were published and the first 2 rolled back.
             expect(edits.length).toBe(5);
 
-            expect((<IMockEditOperation>edits[0]).value).toBe("Edit 1");
-            expect((<IMockEditOperation>edits[1]).value).toBe("Edit 2");
-            expect((<IMockEditOperation>edits[2]).value).toBe("Edit 3");
-            expect((<IMockEditOperation>edits[3]).value).toBe("Edit 2");
-            expect((<IMockEditOperation>edits[4]).value).toBe("Edit 1");
+            expect((<IMockEditOperation>edits[0]).data.value).toBe("Edit 1");
+            expect((<IMockEditOperation>edits[1]).data.value).toBe("Edit 2");
+            expect((<IMockEditOperation>edits[2]).data.value).toBe("Edit 3");
+            expect((<IMockEditOperation>edits[3]).data.value).toBe("Edit 2");
+            expect((<IMockEditOperation>edits[4]).data.value).toBe("Edit 1");
         });
     });
 
