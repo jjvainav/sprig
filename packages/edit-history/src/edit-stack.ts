@@ -2,7 +2,6 @@
 import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
 
 export interface IEditStackItem {
-    readonly checkpoint: number;
     readonly edit: IEditOperation;
 }
 
@@ -29,8 +28,8 @@ export class EditStack {
     }
 
     /** Pushes an edit onto the stack. */
-    push(checkpoint: number, edit: IEditOperation): void {
-        this.undoStack.push({ checkpoint, edit });
+    push(edit: IEditOperation): void {
+        this.undoStack.push({ edit });
         this.redoStack.length = 0;
         
         while (this.undoStack.length > this.size) {
@@ -46,22 +45,22 @@ export class EditStack {
         return this.redoStack.length > 0;
     }
 
-    undo(channel: IEditChannel<IEditOperation>): Promise<IEditDispatchResult<IEditOperation> | undefined> {
+    undo(channel: IEditChannel): Promise<IEditDispatchResult | undefined> {
         return this.handleUndoRedo(channel, this.undoStack, this.redoStack);
     }
 
-    redo(channel: IEditChannel<IEditOperation>): Promise<IEditDispatchResult<IEditOperation> | undefined> {
+    redo(channel: IEditChannel): Promise<IEditDispatchResult | undefined> {
         return this.handleUndoRedo(channel, this.redoStack, this.undoStack);
     }
 
-    private handleUndoRedo(channel: IEditChannel<IEditOperation>, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditDispatchResult<IEditOperation> | undefined> {
+    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditDispatchResult | undefined> {
         const item = source.pop();
 
         if (item) {
             return channel.createPublisher().publish(item.edit)
                 .then(result => {
                     if (result.success && result.response) {
-                        target.push({ checkpoint: item.checkpoint, edit: result.response });
+                        target.push({ edit: result.response });
                     }
 
                     return result;

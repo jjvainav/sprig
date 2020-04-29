@@ -10,7 +10,7 @@ interface IMockEdit extends IEditOperation {
     };
 }
 
-const mockDispatcher: IEditDispatcher<IEditOperation> = edit => {
+const mockDispatcher: IEditDispatcher = edit => {
     const reverse: IMockEdit = {
         type: "mock",
         data: { 
@@ -44,7 +44,7 @@ describe("edit stack", () => {
         const reverse: IMockEdit[] = [];
         observer.on(result => reverse.push(<IMockEdit>result.response));
 
-        stack.push(1, edit);
+        stack.push(edit);
         await stack.undo(channel);
 
         expect(stack.canUndo()).toBe(false);
@@ -66,8 +66,8 @@ describe("edit stack", () => {
         const edits: IEditOperation[] = [];
         observer.on(result => edits.push(result.edit));
 
-        stack.push(1, edit1);
-        stack.push(2, edit2);
+        stack.push(edit1);
+        stack.push(edit2);
 
         await stack.undo(channel);
         await stack.undo(channel);
@@ -91,7 +91,7 @@ describe("edit stack", () => {
         const edits: IEditOperation[] = [];
         observer.on(result => edits.push(result.edit));
 
-        stack.push(1, edit);
+        stack.push(edit);
         await stack.undo(channel);
         await stack.redo(channel);
 
@@ -109,19 +109,19 @@ describe("edit stack", () => {
 
         expect(stack.current).toBeUndefined();
 
-        stack.push(1, createEdit());
-        stack.push(2, createEdit());
-        stack.push(3, createEdit());
+        stack.push(createEdit("1"));
+        stack.push(createEdit("2"));
+        stack.push(createEdit("3"));
 
-        expect(stack.current!.checkpoint).toBe(3);
-
-        await stack.undo(queue.createChannel());
-
-        expect(stack.current!.checkpoint).toBe(2);
+        expect(stack.current!.edit.data.name).toBe("3");
 
         await stack.undo(queue.createChannel());
 
-        expect(stack.current!.checkpoint).toBe(1);
+        expect(stack.current!.edit.data.name).toBe("2");
+
+        await stack.undo(queue.createChannel());
+
+        expect(stack.current!.edit.data.name).toBe("1");
 
         await stack.undo(queue.createChannel());
 
@@ -131,6 +131,6 @@ describe("edit stack", () => {
         await stack.redo(queue.createChannel());
         await stack.redo(queue.createChannel());
 
-        expect(stack.current!.checkpoint).toBe(3);
+        expect(stack.current!.edit.data.name).toBe("3");
     });
 });

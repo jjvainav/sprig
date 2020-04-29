@@ -17,7 +17,7 @@
     "scripts": {
         "build": "tsc -b .",
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
-        "test": "jest --silent"
+        "test": "jest --runInBand"
     },
     "dependencies": {
         "@sprig/edit-operation": "0.1.21",

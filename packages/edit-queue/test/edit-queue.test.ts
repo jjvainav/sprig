@@ -14,7 +14,7 @@ interface IMockEditOperation extends IEditOperation {
     readonly data: IMockEditData;
 }
 
-const dispatcher: IEditDispatcher<any> = edit => {
+const dispatcher: IEditDispatcher = edit => {
     const amount = (<IMockEditOperation>edit).data.delay;
     const error = (<IMockEditOperation>edit).data.error;
     const response = (<IMockEditOperation>edit).data.response;
@@ -25,7 +25,7 @@ const dispatcher: IEditDispatcher<any> = edit => {
 
     return delay(() => error ? Promise.reject(new Error()) : Promise.resolve(response), amount);
 };
-const observeDispatcher = <TResponse = void>(out: IEditOperation[], dispatcher: IEditDispatcher<TResponse>): IEditDispatcher<TResponse> => {
+const observeDispatcher = <TResponse = void>(out: IEditOperation[], dispatcher: IEditDispatcher): IEditDispatcher => {
     return edit => dispatcher(edit).then(result => {
         out.push(edit);
         return result;
@@ -75,6 +75,29 @@ describe("edit queue", () => {
         
         const results: string[] = [];
         observer.on(() => results.push("observer"));
+
+        await publisher.publish(edit).then(() => {
+            results.push("publisher");
+        });
+
+        // ensure the observers are invoked prior to the publish promise resolving
+        expect(results[0]).toBe("observer");
+        expect(results[1]).toBe("publisher");
+    });
+
+    test("publish edit to channel and observe using async observer", async () => {
+        const queue = new EditQueue(dispatcher);
+        const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const edit = createEdit();
+        
+        const results: string[] = [];
+        observer.on(() => new Promise(resolve => setTimeout(() => {
+            results.push("observer");
+            resolve();
+        },
+        0)));
 
         await publisher.publish(edit).then(() => {
             results.push("publisher");
