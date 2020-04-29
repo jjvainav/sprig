@@ -1,15 +1,13 @@
 ﻿import { AsyncQueue } from "@sprig/async-queue";
 import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
-import { IEventListener } from "@sprig/event-emitter";
 import { EditStack } from "./edit-stack";
+import { IEditOperation } from "@sprig/edit-operation/src";
 
 export interface IEditHistory {
     /** Determines if there are any edits that can be reverted. */
     canUndo(): boolean;
     /** Determines if there are any edits that can be re-published. */
     canRedo(): boolean;
-    /** Disposes/destroys the edit history and detaches itself from listening for edits. */
-    dispose(): void;
     /** Reverts one level of edits. */
     undo(): Promise<IEditDispatchResult | undefined>;
     /** Republishes one level of edits. */
@@ -17,30 +15,18 @@ export interface IEditHistory {
 }
 
 /** 
- * An edit history captures edits from a channel and adds them to an undo/redo stack. 
+ * An edit history that supports pushing reverse edits that will later be published to a provided outgoing channel. 
  * This uses an async queue that allows queing undo/redo requests without the need to await for
  * a previous undo/redo to complete before invoking undo/redo again.
- * 
- * Note: the incoming channel is expected to be reverse edits that get added to the stack and the 
- * outgoing channel is responsible for executing the edits from the undo/redo stack.
  */
 export class EditHistory implements IEditHistory {
-    private readonly listeners: IEventListener[] = [];
     private readonly editStack = new EditStack();
     private readonly queue = new AsyncQueue<IEditDispatchResult | undefined>();
-    private readonly _in: IEditChannel;
-    private readonly _out: IEditChannel;
 
     private _isUndo = false;
     private _isRedo = false;
 
-    constructor(incoming: IEditChannel, outgoing: IEditChannel) {
-        this._in = incoming;
-        this._out = outgoing;
-
-        this.listeners.push(this._in.createObserver()
-            .filter(result => result.success && result.response !== undefined)
-            .on(this.handleEditDispatched.bind(this)));
+    constructor(private readonly outgoing: IEditChannel) {
     }
 
     get isUndo(): boolean {
@@ -49,11 +35,6 @@ export class EditHistory implements IEditHistory {
 
     get isRedo(): boolean {
         return this._isRedo;
-    }
-
-    dispose(): void {
-        this.listeners.forEach(listener => listener.remove());
-        this.listeners.length = 0;
     }
 
     canUndo(): boolean {
@@ -66,6 +47,16 @@ export class EditHistory implements IEditHistory {
         return !this._isUndo &&
             !this._isRedo &&
             this.editStack.canRedo();
+    }
+
+    /** Pushes a reverse edit onto the stack. */
+    push(reverse: IEditOperation): boolean {
+        if (!this._isUndo && !this._isRedo) {
+            this.editStack.push(reverse);
+            return true;
+        }
+
+        return false;
     }
 
     /** Removes the top item from the edit history without publishing. */
@@ -94,7 +85,7 @@ export class EditHistory implements IEditHistory {
             if (canUndoRedo()) {
                 start();
 
-                return invoke(this._out).then(result => {
+                return invoke(this.outgoing).then(result => {
                     end();
                     return result;
                 });
@@ -102,11 +93,5 @@ export class EditHistory implements IEditHistory {
 
             return Promise.resolve(undefined);
         });
-    }
-
-    private handleEditDispatched(result: IEditDispatchResult): void {
-        if (!this._isUndo && !this._isRedo) {
-            this.editStack.push(result.edit);
-        }
     }
 }

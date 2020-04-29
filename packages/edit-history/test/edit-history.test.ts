@@ -15,20 +15,15 @@ function createEdit(): IEditOperation {
     return { type: "mock.edit", data: {} };
 }
 
-function createEditHistory(queue: EditQueue, channelToMonitor: IEditChannel, incoming?: IEditChannel, outgoing?: IEditChannel): EditHistory {
-    // the incoming channel will be sent to the edit history and where reverse edits will be published
-    incoming = incoming || queue.createChannel();
-    // the outgoing channel will handle executing edits on a separate channel so they won't get re-added to the stack
-    outgoing = outgoing || queue.createChannel();
-
-    const publisher = incoming.createPublisher();
-    channelToMonitor.createObserver().on(async result => {
+function createEditHistory(queue: EditQueue, channelToMonitor: IEditChannel): EditHistory {
+    const history = new EditHistory(queue.createChannel());
+    channelToMonitor.createObserver().on(result => {
         if (result.success && result.response) {
-            await publisher.publish(result.response);
+            history.push(result.response);
         }
     });
 
-    return new EditHistory(incoming, outgoing);
+    return history;
 }
 
 describe("edit history", () => {
@@ -37,25 +32,6 @@ describe("edit history", () => {
         const channel = queue.createChannel();
         const publisher = channel.createPublisher({ waitOnObservers: true });
         const history = createEditHistory(queue, channel);
-    
-        await publisher.publish(createEdit());
-        const result = await history.undo();
-
-        expect(result).toBeDefined();
-        expect(result!.success).toBe(true);
-
-        expect(history.canUndo()).toBe(false);
-        expect(history.canRedo()).toBe(true);
-    });
-
-    test("undo using the same channel for incoming and outgoing", async () => {
-        const queue = new EditQueue(dispatcher);
-        const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
-
-        // the edit history should be able manage this by ignoring edits that are published while currently dispatching an undo/redo edit
-        const historyChannel = queue.createChannel();
-        const history = createEditHistory(queue, channel, historyChannel, historyChannel);
     
         await publisher.publish(createEdit());
         const result = await history.undo();
