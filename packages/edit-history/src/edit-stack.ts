@@ -1,9 +1,9 @@
 ﻿import { IEditOperation } from "@sprig/edit-operation";
-import { IEditChannel, IEditTransactionResult } from "@sprig/edit-queue";
+import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
 
 export interface IEditStackItem {
     readonly checkpoint: number;
-    readonly edits: IEditOperation[];
+    readonly edit: IEditOperation;
 }
 
 /** A simple undo/redo stack for edit operations. */
@@ -28,15 +28,9 @@ export class EditStack {
         return this.undoStack.pop();
     }
 
-    /**
-     * Pushes a set of edit operations onto the stack representing a single transactional edit.
-     * When performing an undo/redo the entire set of edits will be rolled back as one operation.
-     * 
-     * @param checkpoint A checkpoint value to associate with the edit.
-     * @param edits A set of edits that were executed.
-     */
-    push(checkpoint: number, edits: IEditOperation[]): void {
-        this.undoStack.push({ checkpoint, edits });
+    /** Pushes an edit onto the stack. */
+    push(checkpoint: number, edit: IEditOperation): void {
+        this.undoStack.push({ checkpoint, edit });
         this.redoStack.length = 0;
         
         while (this.undoStack.length > this.size) {
@@ -52,32 +46,26 @@ export class EditStack {
         return this.redoStack.length > 0;
     }
 
-    undo(channel: IEditChannel): Promise<IEditTransactionResult | undefined> {
+    undo(channel: IEditChannel<IEditOperation>): Promise<IEditDispatchResult<IEditOperation> | undefined> {
         return this.handleUndoRedo(channel, this.undoStack, this.redoStack);
     }
 
-    redo(channel: IEditChannel): Promise<IEditTransactionResult | undefined> {
+    redo(channel: IEditChannel<IEditOperation>): Promise<IEditDispatchResult<IEditOperation> | undefined> {
         return this.handleUndoRedo(channel, this.redoStack, this.undoStack);
     }
 
-    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditTransactionResult | undefined> {
+    private handleUndoRedo(channel: IEditChannel<IEditOperation>, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditDispatchResult<IEditOperation> | undefined> {
         const item = source.pop();
 
         if (item) {
-            const reverse: IEditOperation[] = [];
+            return channel.createPublisher().publish(item.edit)
+                .then(result => {
+                    if (result.success && result.response) {
+                        target.push({ checkpoint: item.checkpoint, edit: result.response });
+                    }
 
-            // when reverting changes for an undo/redo the edits should be published in reverse order
-            for (let i = item.edits.length - 1; i >= 0; i--) {
-                reverse.push(item.edits[i]);
-            }
-
-            return channel.publish(reverse).then(result => {
-                if (result.isCommitted) {
-                    target.push({ checkpoint: item.checkpoint, edits: result.reverse });
-                }
-
-                return result;
-            });
+                    return result;
+                });
         }
 
         return Promise.resolve(undefined);

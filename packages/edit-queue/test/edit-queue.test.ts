@@ -1,60 +1,42 @@
 ﻿import "jest";
 import { IEditOperation } from "@sprig/edit-operation";
-import { EditQueue, IEditDispatcher, IEditTransactionResult } from "../src";
+import { EditQueue, IEditDispatcher } from "../src";
+
+interface IMockEditData {
+    readonly delay?: number;
+    readonly error?: boolean;
+    readonly response?: any;
+    readonly value?: string;
+}
 
 interface IMockEditOperation extends IEditOperation {
     readonly type: "mock";
-    readonly data: {
-        readonly delay?: number; 
-        readonly error?: Error;
-        readonly value?: string;
-    };
+    readonly data: IMockEditData;
 }
 
-const rejectDispatcher: IEditDispatcher = () => Promise.reject("Edit rejected");
-const mockDispatcher: (out?: IEditOperation[]) => IEditDispatcher = out => edit => {
+const dispatcher: IEditDispatcher<any> = edit => {
     const amount = (<IMockEditOperation>edit).data.delay;
     const error = (<IMockEditOperation>edit).data.error;
-
-    if (out) {
-        out.push(edit);
-    }
+    const response = (<IMockEditOperation>edit).data.response;
 
     if (amount === undefined) {
-        if (error) {
-            throw error;
-        }
-
-        return Promise.resolve([{ ...edit }]);
+        return error ? Promise.reject(new Error()) : Promise.resolve(response);
     }
 
-    return delay(() => { 
-        if (error) {
-            throw error;
-        }
-
-        return [{ ...edit }];
-    }, amount);
+    return delay(() => error ? Promise.reject(new Error()) : Promise.resolve(response), amount);
+};
+const observeDispatcher = <TResponse = void>(out: IEditOperation[], dispatcher: IEditDispatcher<TResponse>): IEditDispatcher<TResponse> => {
+    return edit => dispatcher(edit).then(result => {
+        out.push(edit);
+        return result;
+    });
 };
 
-function mockEdit(delay?: number, value?: string, error?: Error): IMockEditOperation {
-    return { 
-        type: "mock", 
-        data: { delay, value, error }
-    };
+function createEdit(data?: IMockEditData): IMockEditOperation {
+    return { type: "mock", data: data || {} };
 }
 
-function assert(done: jest.DoneCallback, callback: () => void): void {
-    try {
-        callback();
-        done();
-    }
-    catch (error) {
-        done.fail(error);
-    }
-}
-
-function delay<TReturn = void>(fn: () => TReturn, delay: number): Promise<TReturn> {
+function delay<TReturn = void>(fn: () => TReturn, amount: number): Promise<TReturn> {
     return new Promise((resolve, reject) => {
         setTimeout(() => {
             try {
@@ -63,424 +45,160 @@ function delay<TReturn = void>(fn: () => TReturn, delay: number): Promise<TRetur
             catch (error) {
                 reject(error);
             }
-        }, delay);
+        }, 
+        amount);
     });
 }
 
 describe("edit queue", () => {
     test("publish edit to channel", async () => {
-        const queue = new EditQueue(mockDispatcher());
+        const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
+        const publisher = channel.createPublisher();
+        const edit = createEdit();
         
-        const result = await channel.publish(mockEdit());
+        const result = await publisher.publish(edit);
 
-        expect(result.isCommitted).toBeTruthy();
-        expect(result.isAborted).toBeFalsy();
+        expect(result.success).toBe(true);
+        expect(result.channel).toBe(channel);
+        expect(result.edit).toBe(edit);
+        expect(result.error).toBeUndefined();
+        expect(result.response).toBeUndefined();
     });
 
-    test("publish multiple edits to channel", async () => {
-        const queue = new EditQueue(mockDispatcher());
+    test("publish edit to channel with response", async () => {
+        const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const results: string[] = [];
+        const publisher = channel.createPublisher();
+        const edit = createEdit({ response: "foo" });
         
-        const result1 = await channel.publish(mockEdit(0, "edit 1"));
-        results.push((<IMockEditOperation>result1.edits[0]).data.value!);
+        const result = await publisher.publish(edit);
 
-        const result2 = await channel.publish(mockEdit(undefined, "edit 2"));
-        results.push((<IMockEditOperation>result2.edits[0]).data.value!);
-
-        expect(results).toHaveLength(2);
-        expect(results[0]).toBe("edit 1");
-        expect(results[1]).toBe("edit 2");
-        // ensure the transaction ids are different
-        expect(result1.id).not.toBe(result2.id);
+        expect(result.success).toBe(true);
+        expect(result.channel).toBe(channel);
+        expect(result.edit).toBe(edit);
+        expect(result.error).toBeUndefined();
+        expect(result.response).toBe("foo");
     });
 
-    test("publish multiple edits to channel as batch", async () => {
-        const queue = new EditQueue(mockDispatcher());
+    test("publish edit to channel with error thrown from dispatcher", async () => {
+        const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const transaction = channel.beginTransaction();
-
-        transaction.publish(mockEdit(undefined, "Edit 1"));
-        transaction.publish(mockEdit(undefined, "Edit 2"));
-        transaction.publish(mockEdit(undefined, "Edit 3"));
-
-        const result = await transaction.end();
-
-        expect(result.isAborted).toBeFalsy();
-        expect(result.isCommitted).toBeTruthy();
-        expect(result.edits.length).toBe(3);
-
-        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
-    });
-
-    test("publish multiple async edits to channel as batch", async () => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-        const transaction = channel.beginTransaction();
-
-        transaction.publish(mockEdit(10, "Edit 1"));
-        transaction.publish(mockEdit(0, "Edit 2"));
-        transaction.publish(mockEdit(20, "Edit 3"));
-
-        const result = await transaction.end();
-
-        expect(result.isAborted).toBeFalsy();
-        expect(result.isCommitted).toBeTruthy();
-        expect(result.edits.length).toBe(3);
-
-        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
-    });
-
-    test("publish multiple async edits to channel as batch with await", async () => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-        const transaction = channel.beginTransaction();
-
-        await transaction.publish(mockEdit(10, "Edit 1"));
-        await transaction.publish(mockEdit(0, "Edit 2"));
-        await transaction.publish(mockEdit(20, "Edit 3"));
-
-        const result = await transaction.end();
-
-        expect(result.isAborted).toBeFalsy();
-        expect(result.isCommitted).toBeTruthy();
-        expect(result.edits.length).toBe(3);
-
-        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
-    });
-
-    test("publish multiple async edits to transaction scope", async () => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-
-        const result = await channel.publish(async transaction => {
-            transaction.publish(mockEdit(10, "Edit 1"));
-            transaction.publish(mockEdit(0, "Edit 2"));
-            transaction.publish(mockEdit(20, "Edit 3"));
-        });
-
-        expect(result.isAborted).toBeFalsy();
-        expect(result.isCommitted).toBeTruthy();
-        expect(result.edits.length).toBe(3);
-
-        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
-    });
-
-    test("publish multiple async edits to transaction scope with await", async () => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-
-        let started = 0;
-        let ended = 0;
+        const publisher = channel.createPublisher();
+        const edit = createEdit({ error: true, response: "foo" });
         
-        channel.onTransactionStarted(() => started++);
-        channel.onTransactionEnded(() => ended++);
+        const result = await publisher.publish(edit);
 
-        const result = await channel.publish(async transaction => {
-            await transaction.publish(mockEdit(10, "Edit 1"));
-            await transaction.publish(mockEdit(0, "Edit 2"));
-            await transaction.publish(mockEdit(20, "Edit 3"));
-        });
-
-        expect(started).toBe(1);
-        expect(ended).toBe(1);
-
-        expect(result.isAborted).toBeFalsy();
-        expect(result.isCommitted).toBeTruthy();
-        expect(result.edits.length).toBe(3);
-
-        expect((<IMockEditOperation>result.edits[0]).data.value).toBe("Edit 1");
-        expect((<IMockEditOperation>result.edits[1]).data.value).toBe("Edit 2");
-        expect((<IMockEditOperation>result.edits[2]).data.value).toBe("Edit 3");
+        expect(result.success).toBe(false);
+        expect(result.channel).toBe(channel);
+        expect(result.edit).toBe(edit);
+        expect(result.error).toBeDefined();
+        expect(result.response).toBeUndefined();
     });
 
-    test("publish edit while transaction finalizing", async () => {
-        const queue = new EditQueue(mockDispatcher());
+    test("publish multiple edits to channel and ensure dispatched in proper order", async () => {
+        const out: IMockEditOperation[] = [];
+        const queue = new EditQueue(observeDispatcher(out, dispatcher));
         const channel = queue.createChannel();
-
-        const results: IEditTransactionResult[] = [];
-        let count = 0;
-
-        channel.onTransactionStarted(() => count++);
-        channel.onTransactionEnded(event => results.push(event.result));
-
-        channel.publish(mockEdit(0, "Edit 1"));
-
-        // the previous transaction should be in a 'finalizing' state at this point
-        // publishing a new edit should queue up a new transaction to start after
-        // the previous transaction has completed; because of this, we only need
-        // to await this transaction and not the last one
-        await channel.publish(mockEdit(undefined, "Edit 2"));
-
-        expect(count).toBe(2);
-        expect(results.length).toBe(2);
-
-        expect((<IMockEditOperation>results[0].edits[0]).data.value).toBe("Edit 1");
-        expect((<IMockEditOperation>results[1].edits[0]).data.value).toBe("Edit 2");
-    });
-
-    test("publish edits with multiple open transactions", done => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-        const results: IEditTransactionResult[] = [];
-
-        channel.onTransactionEnded(event => {
-            results.push(event.result);
-
-            if (results.length === 2) {
-                doAssert();
-            }
-        });
-
-        const transaction1 = channel.beginTransaction();
-        const transaction2 = channel.beginTransaction();
-
-        // transaction1 was started first so even though an edit is published against transaction2 first
-        // edits pubished against transaction1 will still be published first
-        transaction2.publish(mockEdit(0, "foo"));
-        transaction1.publish(mockEdit(0, "bar"));
-
-        transaction2.end();
-        transaction1.end();
-
-        const doAssert = () => assert(done, () => {
-            expect(results[0].id).toBe(transaction1.id);
-            expect((<IMockEditOperation>results[0].edits[0]).data.value).toBe("bar");
-
-            expect(results[1].id).toBe(transaction2.id);
-            expect((<IMockEditOperation>results[1].edits[0]).data.value).toBe("foo");
-        });
-    });
-
-    test("publish multiple edits forcing transactions to queue up", async () => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-
-        const publishedEdits: IMockEditOperation[] = [];
-        let count = 0;
-
-        channel.onTransactionStarted(() => count++);
-        channel.onTransactionEnded(event => event.result.edits.forEach(edit => publishedEdits.push(<IMockEditOperation>edit)));
-
-        channel.publish(mockEdit(0, "Edit 1"));
-        channel.publish(mockEdit(undefined, "Edit 2"));
-        channel.publish(mockEdit(10, "Edit 3"));
-        channel.publish(mockEdit(0, "Edit 4"));
-        await channel.publish(mockEdit(20, "Edit 5"));
-
-        expect(count).toBe(5);
-        expect(publishedEdits.length).toBe(5);
-
-        expect(publishedEdits[0].data.value).toBe("Edit 1");
-        expect(publishedEdits[1].data.value).toBe("Edit 2");
-        expect(publishedEdits[2].data.value).toBe("Edit 3");
-        expect(publishedEdits[3].data.value).toBe("Edit 4");
-        expect(publishedEdits[4].data.value).toBe("Edit 5");
-    });
-
-    test("publish multiple batch edits forcing transactions to queue up", done => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-
-        const publishedEdits: IMockEditOperation[] = [];
-        let count = 0;
-
-        channel.onTransactionStarted(() => count++);
-        channel.onTransactionEnded(event => {
-            event.result.edits.forEach(edit => publishedEdits.push(<IMockEditOperation>edit));
-
-            if (count === 2) {
-                doAssert();
-            }
-        });
-
-        const transaction1 = channel.beginTransaction();
-        transaction1.publish(mockEdit(0, "Edit 1"));
-        transaction1.publish(mockEdit(undefined, "Edit 2"));
-        transaction1.publish(mockEdit(10, "Edit 3"));
-        transaction1.end();
-
-        const transaction2 = channel.beginTransaction();
-        transaction2.publish(mockEdit(0, "Edit 4"));
-        transaction2.publish(mockEdit(20, "Edit 5"));
-        transaction2.end();
-
-        const doAssert = () => assert(done, () => {
-            expect(count).toBe(2);
-            expect(publishedEdits.length).toBe(5);
-
-            expect(publishedEdits[0].data.value).toBe("Edit 1");
-            expect(publishedEdits[1].data.value).toBe("Edit 2");
-            expect(publishedEdits[2].data.value).toBe("Edit 3");
-            expect(publishedEdits[3].data.value).toBe("Edit 4");
-            expect(publishedEdits[4].data.value).toBe("Edit 5");
-        });
-    });
-
-    test("publish multiple batch edits to concurrent transactions", done => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-
-        const publishedEdits: IMockEditOperation[] = [];
-        let count = 0;
-
-        channel.onTransactionStarted(() => count++);
-        channel.onTransactionEnded(event => {
-            event.result.edits.forEach(edit => publishedEdits.push(<IMockEditOperation>edit));
-
-            if (count === 2) {
-                doAssert();
-            }
-        });
-
-        // transaction1 was started first so all edits published to that
-        // transaction will beat out any edits published to transaction2
-        const transaction1 = channel.beginTransaction();
-        const transaction2 = channel.beginTransaction();
+        const publisher = channel.createPublisher();
         
-        transaction1.publish(mockEdit(0, "Edit 1"));
-        transaction2.publish(mockEdit(0, "Edit 4"));
-        transaction1.publish(mockEdit(undefined, "Edit 2"));
-        transaction1.publish(mockEdit(10, "Edit 3"));
-        transaction2.publish(mockEdit(20, "Edit 5"));
+        const result1 = await publisher.publish(createEdit({ delay: 0, value: "edit 1" }));
+        const result2 = await publisher.publish(createEdit({ value: "edit 2" }));
+
+        expect(result1.success).toBe(true);
+        expect(result2.success).toBe(true);
+
+        expect(out).toHaveLength(2);
+        expect(out[0].data.value).toBe("edit 1");
+        expect(out[1].data.value).toBe("edit 2");
+    });
+
+    test("publish multiple edits to channel and ensure observed in proper order", async () => {
+        const queue = new EditQueue(dispatcher);
+        const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher = channel.createPublisher();
+
+        const out: IMockEditOperation[] = [];
+        observer.on(result => out.push(<IMockEditOperation>result.edit));
         
-        transaction2.end();
-        transaction1.end();
+        const result1 = await publisher.publish(createEdit({ delay: 0, value: "edit 1" }));
+        const result2 = await publisher.publish(createEdit({ value: "edit 2" }));
 
-        const doAssert = () => assert(done, () => {
-            expect(count).toBe(2);
-            expect(publishedEdits.length).toBe(5);
+        expect(result1.success).toBe(true);
+        expect(result2.success).toBe(true);
 
-            expect(publishedEdits[0].data.value).toBe("Edit 1");
-            expect(publishedEdits[1].data.value).toBe("Edit 2");
-            expect(publishedEdits[2].data.value).toBe("Edit 3");
-            expect(publishedEdits[3].data.value).toBe("Edit 4");
-            expect(publishedEdits[4].data.value).toBe("Edit 5");
-        });
+        expect(out).toHaveLength(2);
+        expect(out[0].data.value).toBe("edit 1");
+        expect(out[1].data.value).toBe("edit 2");
     });
 
-    test("publish multiple batch edits to transaction scope forcing transactions to queue up", done => {
-        const queue = new EditQueue(mockDispatcher());
+    test("publish multiple edits using different publishers for the same channel", async () => {
+        const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher1 = channel.createPublisher();
+        const publisher2 = channel.createPublisher();
 
-        const publishedEdits: IMockEditOperation[] = [];
-        let count = 0;
-
-        channel.onTransactionStarted(() => count++);
-        channel.onTransactionEnded(event => {
-            event.result.edits.forEach(edit => publishedEdits.push(<IMockEditOperation>edit));
-
-            if (count === 2) {
-                doAssert();
-            }
-        });
-
-        channel.publish(async transaction => {
-            transaction.publish(mockEdit(0, "Edit 1"));
-            transaction.publish(mockEdit(undefined, "Edit 2"));
-            transaction.publish(mockEdit(10, "Edit 3"));
-        });
-
-        channel.publish(async transaction => {
-            transaction.publish(mockEdit(0, "Edit 4"));
-            transaction.publish(mockEdit(20, "Edit 5"));
-        });
-
-        const doAssert = () => assert(done, () => {
-            expect(count).toBe(2);
-            expect(publishedEdits.length).toBe(5);
-
-            expect(publishedEdits[0].data.value).toBe("Edit 1");
-            expect(publishedEdits[1].data.value).toBe("Edit 2");
-            expect(publishedEdits[2].data.value).toBe("Edit 3");
-            expect(publishedEdits[3].data.value).toBe("Edit 4");
-            expect(publishedEdits[4].data.value).toBe("Edit 5");
-        });
-    });
-
-    test("publish edit that throws", done => {
-        const queue = new EditQueue(mockDispatcher());
-        const channel = queue.createChannel();
-
-        channel.onTransactionEnded(event => doAssert(event.result));
-        channel.publish(mockEdit(0, "", new Error()));
-
-        const doAssert = (result: IEditTransactionResult) => assert(done, () => {
-            expect(result.isCommitted).toBeFalsy();
-            expect(result.isAborted).toBeTruthy();
-        });
-    });
-
-    test("publish batch edits that throw", done => {
-        const edits: IEditOperation[] = [];
-        const queue = new EditQueue(mockDispatcher(edits));
-        const channel = queue.createChannel();
-
-        channel.onTransactionEnded(event => doAssert(event.result));
-
-        const transaction = channel.beginTransaction();
-        transaction.publish(mockEdit(0, "Edit 1"));
-        transaction.publish(mockEdit(0, "Edit 2"));
-        transaction.publish(mockEdit(0, "Edit 3", new Error()));
-        transaction.end();
-
-        const doAssert = (result: IEditTransactionResult) => assert(done, () => {
-            expect(result.isAborted).toBeTruthy();
-            expect(result.isCommitted).toBeFalsy();
-
-            // the first 2 edits were successful
-            expect(result.edits.length).toBe(2);
-            expect(result.reverse.length).toBe(2);
-
-            // the dispatcher should have executed 5 edits, the 3 that were published and the first 2 rolled back.
-            expect(edits.length).toBe(5);
-
-            expect((<IMockEditOperation>edits[0]).data.value).toBe("Edit 1");
-            expect((<IMockEditOperation>edits[1]).data.value).toBe("Edit 2");
-            expect((<IMockEditOperation>edits[2]).data.value).toBe("Edit 3");
-            expect((<IMockEditOperation>edits[3]).data.value).toBe("Edit 2");
-            expect((<IMockEditOperation>edits[4]).data.value).toBe("Edit 1");
-        });
-    });
-
-    test("publish edit and throw from store", done => {
-        const queue = new EditQueue(rejectDispatcher);
-        const channel = queue.createChannel();
+        const out: IMockEditOperation[] = [];
+        observer.on(result => out.push(<IMockEditOperation>result.edit));
         
-        channel.onTransactionEnded(event => doAssert(event.result));
-        channel.publish(mockEdit(0));
+        const result1 = await publisher1.publish(createEdit({ delay: 0, value: "edit 1" }));
+        const result2 = await publisher2.publish(createEdit({ value: "edit 2" }));
 
-        const doAssert = (result: IEditTransactionResult) => assert(done, () => {
-            expect(result.isCommitted).toBeFalsy();
-            expect(result.isAborted).toBeTruthy();
-        });
+        expect(result1.success).toBe(true);
+        expect(result2.success).toBe(true);
+
+        expect(out).toHaveLength(2);
+        expect(out[0].data.value).toBe("edit 1");
+        expect(out[1].data.value).toBe("edit 2");
     });
 
-    test("publish and throw from transaction scope", async done => {
-        const queue = new EditQueue(mockDispatcher());
+    test("publish multiple async edits to channel", async () => {
+        const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher = channel.createPublisher();
+        
+        const out: IMockEditOperation[] = [];
+        observer.on(result => out.push(<IMockEditOperation>result.edit));
 
-        channel.onTransactionEnded(event => doAssert(event.result));
+        await Promise.all([
+            publisher.publish(createEdit({ delay: 10, value:  "Edit 1" })),
+            publisher.publish(createEdit({ delay: 0, value: "Edit 2" })),
+            publisher.publish(createEdit({ delay: 20, value:  "Edit 3" }))
+        ]);
 
-        await expect(channel.publish(async transaction => {
-            await transaction.publish(mockEdit(10, "Edit 1"));
-            throw new Error("foo");
-        })).rejects.toThrowError("foo");
+        expect(out[0].data.value).toBe("Edit 1");
+        expect(out[1].data.value).toBe("Edit 2");
+        expect(out[2].data.value).toBe("Edit 3");
+    });
 
-        // if an error is thrown from within a transaction scope the transaction
-        // is expected to rollback (abort) and the publish promise to reject
+    test("publish edits using multiple channels", async () => {
+        const queueOut: IMockEditOperation[] = [];
+        const queue = new EditQueue(observeDispatcher(queueOut, dispatcher));
+        const channel1 = queue.createChannel();
+        const channel2 = queue.createChannel();
 
-        const doAssert = (result: IEditTransactionResult) => assert(done, () => {
-            expect(result.isAborted).toBeTruthy();
-        });
+        const observer1 = channel1.createObserver();
+        const observer2 = channel2.createObserver();
+
+        const outChannel1: IMockEditOperation[] = [];
+        observer1.on(result => outChannel1.push(<IMockEditOperation>result.edit));
+        const outChannel2: IMockEditOperation[] = [];
+        observer2.on(result => outChannel2.push(<IMockEditOperation>result.edit));
+
+        await channel1.createPublisher().publish(createEdit({ delay: 0, value: "edit 1" }));
+        await channel2.createPublisher().publish(createEdit({ delay: 0, value: "edit 2" }));
+
+        expect(queueOut).toHaveLength(2);
+        expect(queueOut[0].data.value).toBe("edit 1");
+        expect(queueOut[1].data.value).toBe("edit 2");
+
+        expect(outChannel1).toHaveLength(1);
+        expect(outChannel1[0].data.value).toBe("edit 1");
+
+        expect(outChannel2).toHaveLength(1);
+        expect(outChannel2[0].data.value).toBe("edit 2");
     });
 });
