@@ -1,7 +1,7 @@
 {
     "name": "@sprig/store",
     "description": "Provides basic centralized state management for an application.",
-    "version": "0.1.22",
+    "version": "0.1.23",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,6 +21,6 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/event-emitter": "0.1.22"
+        "@sprig/event-emitter": "0.1.23"
     }
 }
