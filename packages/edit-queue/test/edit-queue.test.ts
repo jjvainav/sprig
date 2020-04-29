@@ -66,6 +66,25 @@ describe("edit queue", () => {
         expect(result.response).toBeUndefined();
     });
 
+    test("publish edit to channel and observe", async () => {
+        const queue = new EditQueue(dispatcher);
+        const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher = channel.createPublisher();
+        const edit = createEdit();
+        
+        const results: string[] = [];
+        observer.on(() => results.push("observer"));
+
+        await publisher.publish(edit).then(() => {
+            results.push("publisher");
+        });
+
+        // ensure the observers are invoked prior to the publish promise resolving
+        expect(results[0]).toBe("observer");
+        expect(results[1]).toBe("publisher");
+    });
+
     test("publish edit to channel with response", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
