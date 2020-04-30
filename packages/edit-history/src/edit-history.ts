@@ -1,7 +1,7 @@
 ﻿import { AsyncQueue } from "@sprig/async-queue";
+import { IEditOperation } from "@sprig/edit-operation";
 import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
 import { EditStack } from "./edit-stack";
-import { IEditOperation } from "@sprig/edit-operation/src";
 
 export interface IEditHistory {
     /** Determines if there are any edits that can be reverted. */
