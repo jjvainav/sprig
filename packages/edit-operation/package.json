@@ -1,7 +1,7 @@
 {
     "name": "@sprig/edit-operation",
     "description": "Defines an abstraction and core functions for edit operations against an object model.",
-    "version": "0.1.26",
+    "version": "0.1.27",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,6 +21,6 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/immutable-collection": "0.1.26"
+        "@sprig/immutable-collection": "0.1.27"
     }
 }
