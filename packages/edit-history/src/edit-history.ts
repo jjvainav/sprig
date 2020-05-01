@@ -57,9 +57,9 @@ export class EditHistory implements IEditHistory {
     }
 
     /** Pushes a reverse edit onto the stack. */
-    push(reverse: IEditOperation): boolean {
+    push(reverse: IEditOperation, state?: any): boolean {
         if (!this._isUndo && !this._isRedo) {
-            this.editStack.push(reverse);
+            this.editStack.push(reverse, state);
             return true;
         }
 
