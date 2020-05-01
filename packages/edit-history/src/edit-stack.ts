@@ -1,10 +1,20 @@
 ﻿import { IEditOperation } from "@sprig/edit-operation";
-import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
+import { IEditChannel } from "@sprig/edit-queue";
 
 /** Represents an item on the edit stack. */
 export interface IEditStackItem {
     readonly checkpoint: number;
     readonly edit: IEditOperation;
+    readonly state?: any;
+}
+
+/** Defines the result of an undo/redo operation on the stack. */
+export interface IEditStackResult {
+    readonly success: boolean;
+    readonly checkpoint: number;
+    readonly edit: IEditOperation;
+    readonly state?: any;
+    readonly error?: any;
 }
 
 /** A simple undo/redo stack for edit operations. */
@@ -31,9 +41,9 @@ export class EditStack {
         return this.undoStack.pop();
     }
 
-    /** Pushes an edit onto the stack. */
-    push(edit: IEditOperation): void {
-        this.undoStack.push({ edit, checkpoint: this.nextCheckpoint++ });
+    /** Pushes an edit onto the stack and optional state that will be associated with the current checkpoint of the stack. */
+    push(edit: IEditOperation, state?: any): void {
+        this.undoStack.push({ edit, state, checkpoint: this.nextCheckpoint++ });
         this.redoStack.length = 0;
         
         while (this.undoStack.length > this.size) {
@@ -49,25 +59,31 @@ export class EditStack {
         return this.redoStack.length > 0;
     }
 
-    undo(channel: IEditChannel): Promise<IEditDispatchResult | undefined> {
+    undo(channel: IEditChannel): Promise<IEditStackResult | undefined> {
         return this.handleUndoRedo(channel, this.undoStack, this.redoStack);
     }
 
-    redo(channel: IEditChannel): Promise<IEditDispatchResult | undefined> {
+    redo(channel: IEditChannel): Promise<IEditStackResult | undefined> {
         return this.handleUndoRedo(channel, this.redoStack, this.undoStack);
     }
 
-    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditDispatchResult | undefined> {
+    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditStackResult | undefined> {
         const item = source.pop();
 
         if (item) {
             return channel.createPublisher().publish(item.edit)
                 .then(result => {
                     if (result.success && result.response) {
-                        target.push({ edit: result.response, checkpoint: item.checkpoint });
+                        target.push({ edit: result.response, state: item.state, checkpoint: item.checkpoint });
                     }
 
-                    return result;
+                    return {
+                        success: result.success,
+                        checkpoint: item.checkpoint,
+                        edit: result.edit,
+                        state: item.state,
+                        error: result.error
+                    };
                 });
         }
 

@@ -1,7 +1,7 @@
 ﻿import { AsyncQueue } from "@sprig/async-queue";
 import { IEditOperation } from "@sprig/edit-operation";
-import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
-import { EditStack } from "./edit-stack";
+import { IEditChannel } from "@sprig/edit-queue";
+import { EditStack, IEditStackResult } from "./edit-stack";
 
 export interface IEditHistory {
     /** A pointer into the current edit stack or undefined if the stack is empty. */
@@ -11,9 +11,9 @@ export interface IEditHistory {
     /** Determines if there are any edits that can be re-published. */
     canRedo(): boolean;
     /** Reverts one level of edits. */
-    undo(): Promise<IEditDispatchResult | undefined>;
+    undo(): Promise<IEditStackResult | undefined>;
     /** Republishes one level of edits. */
-    redo(): Promise<IEditDispatchResult | undefined>;
+    redo(): Promise<IEditStackResult | undefined>;
 }
 
 /** 
@@ -23,7 +23,7 @@ export interface IEditHistory {
  */
 export class EditHistory implements IEditHistory {
     private readonly editStack = new EditStack();
-    private readonly queue = new AsyncQueue<IEditDispatchResult | undefined>();
+    private readonly queue = new AsyncQueue<IEditStackResult | undefined>();
 
     private _isUndo = false;
     private _isRedo = false;
@@ -71,7 +71,7 @@ export class EditHistory implements IEditHistory {
         this.editStack.pop();
     }
 
-    undo(): Promise<IEditDispatchResult | undefined> {
+    undo(): Promise<IEditStackResult | undefined> {
         return this.queueUndoRedo(
             this.canUndo.bind(this),
             () => this._isUndo = true,
@@ -79,7 +79,7 @@ export class EditHistory implements IEditHistory {
             this.editStack.undo.bind(this.editStack));
     }
 
-    redo(): Promise<IEditDispatchResult | undefined> {
+    redo(): Promise<IEditStackResult | undefined> {
         return this.queueUndoRedo(
             this.canRedo.bind(this),
             () => this._isRedo = true,
@@ -87,7 +87,7 @@ export class EditHistory implements IEditHistory {
             this.editStack.redo.bind(this.editStack));
     }
 
-    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (channel: IEditChannel) => Promise<IEditDispatchResult | undefined>): Promise<IEditDispatchResult | undefined> {
+    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (channel: IEditChannel) => Promise<IEditStackResult | undefined>): Promise<IEditStackResult | undefined> {
         return this.queue.push(() => {
             if (canUndoRedo()) {
                 start();
