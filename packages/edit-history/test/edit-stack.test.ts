@@ -114,23 +114,48 @@ describe("edit stack", () => {
         stack.push(createEdit("3"));
 
         expect(stack.current!.edit.data.name).toBe("3");
+        expect(stack.current!.checkpoint).toBe(3);
+
+        // empty the stack
 
         await stack.undo(queue.createChannel());
-
         expect(stack.current!.edit.data.name).toBe("2");
+        expect(stack.current!.checkpoint).toBe(2);
 
         await stack.undo(queue.createChannel());
-
         expect(stack.current!.edit.data.name).toBe("1");
+        expect(stack.current!.checkpoint).toBe(1);
 
         await stack.undo(queue.createChannel());
-
         expect(stack.current).toBeUndefined();
 
-        await stack.redo(queue.createChannel());
-        await stack.redo(queue.createChannel());
-        await stack.redo(queue.createChannel());
+        // redo all the edits
 
+        await stack.redo(queue.createChannel());
+        expect(stack.current!.edit.data.name).toBe("1");
+        expect(stack.current!.checkpoint).toBe(1);
+
+        await stack.redo(queue.createChannel());
+        expect(stack.current!.edit.data.name).toBe("2");
+        expect(stack.current!.checkpoint).toBe(2);
+
+        await stack.redo(queue.createChannel());
         expect(stack.current!.edit.data.name).toBe("3");
+        expect(stack.current!.checkpoint).toBe(3);
+
+        // perform an undo and then push a new item
+
+        await stack.undo(queue.createChannel());
+        expect(stack.current!.edit.data.name).toBe("2");
+        expect(stack.current!.checkpoint).toBe(2);
+
+        stack.push(createEdit("4"));
+        expect(stack.current!.edit.data.name).toBe("4");
+        expect(stack.current!.checkpoint).toBe(4);
+
+        // item and checkpoint 3 will be discarded - verify by performing an undo and checking the checkpoint
+        await stack.undo(queue.createChannel());
+        expect(stack.current!.edit.data.name).toBe("2");
+        expect(stack.current!.checkpoint).toBe(2);
     });
 });

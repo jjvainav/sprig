@@ -1,7 +1,9 @@
 ﻿import { IEditOperation } from "@sprig/edit-operation";
 import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
 
+/** Represents an item on the edit stack. */
 export interface IEditStackItem {
+    readonly checkpoint: number;
     readonly edit: IEditOperation;
 }
 
@@ -9,6 +11,8 @@ export interface IEditStackItem {
 export class EditStack {
     private readonly undoStack: IEditStackItem[] = [];
     private readonly redoStack: IEditStackItem[] = [];
+
+    private nextCheckpoint = 1;
 
     constructor(private readonly size = 50) {
     }
@@ -29,7 +33,7 @@ export class EditStack {
 
     /** Pushes an edit onto the stack. */
     push(edit: IEditOperation): void {
-        this.undoStack.push({ edit });
+        this.undoStack.push({ edit, checkpoint: this.nextCheckpoint++ });
         this.redoStack.length = 0;
         
         while (this.undoStack.length > this.size) {
@@ -60,7 +64,7 @@ export class EditStack {
             return channel.createPublisher().publish(item.edit)
                 .then(result => {
                     if (result.success && result.response) {
-                        target.push({ edit: result.response });
+                        target.push({ edit: result.response, checkpoint: item.checkpoint });
                     }
 
                     return result;

@@ -4,6 +4,8 @@ import { IEditChannel, IEditDispatchResult } from "@sprig/edit-queue";
 import { EditStack } from "./edit-stack";
 
 export interface IEditHistory {
+    /** A pointer into the current edit stack or undefined if the stack is empty. */
+    readonly checkpoint: number | undefined;
     /** Determines if there are any edits that can be reverted. */
     canUndo(): boolean;
     /** Determines if there are any edits that can be re-published. */
@@ -27,6 +29,11 @@ export class EditHistory implements IEditHistory {
     private _isRedo = false;
 
     constructor(private readonly outgoing: IEditChannel) {
+    }
+
+    get checkpoint(): number | undefined {
+        const current = this.editStack.current;
+        return current && current.checkpoint;
     }
 
     get isUndo(): boolean {
