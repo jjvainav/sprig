@@ -36,9 +36,22 @@ export class EditStack {
         return undefined;
     }
 
-    /** Removes the top item from the stack without publishing. */
-    pop(): IEditStackItem | undefined {
-        return this.undoStack.pop();
+    remove(checkpoint: number): boolean {
+        for (let i = 0; i < this.undoStack.length; i++) {
+            if (this.undoStack[i].checkpoint === checkpoint) {
+                this.undoStack.splice(i, 1);
+                return true;
+            }
+        }
+
+        for (let i = 0; i < this.redoStack.length; i++) {
+            if (this.redoStack[i].checkpoint === checkpoint) {
+                this.redoStack.splice(i, 1);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Pushes an edit onto the stack and optional state that will be associated with the current checkpoint of the stack. */

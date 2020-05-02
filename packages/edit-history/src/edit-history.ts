@@ -66,9 +66,9 @@ export class EditHistory implements IEditHistory {
         return false;
     }
 
-    /** Removes the top item from the edit history without publishing. */
-    pop(): void {
-        this.editStack.pop();
+    /** Allows removing an edit from the history at the specified checkpoint without publishing. */
+    remove(checkpoint: number): boolean {
+        return this.editStack.remove(checkpoint);
     }
 
     undo(): Promise<IEditStackResult | undefined> {
