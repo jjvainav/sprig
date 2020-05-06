@@ -30,7 +30,7 @@ describe("edit history", () => {
     test("undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
     
         await publisher.publish(createEdit());
@@ -46,7 +46,7 @@ describe("edit history", () => {
     test("redo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
     
         await publisher.publish(createEdit());
@@ -63,7 +63,7 @@ describe("edit history", () => {
     test("undo and then redo without waiting for undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
     
         await publisher.publish(createEdit());
@@ -82,7 +82,7 @@ describe("edit history", () => {
     test("isUndo during undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
     
         await publisher.publish(createEdit());
@@ -99,7 +99,7 @@ describe("edit history", () => {
     test("isUndo during multiple undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
     
         await publisher.publish(createEdit());
@@ -122,7 +122,7 @@ describe("edit history", () => {
     test("isRedo during redo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
     
         await publisher.publish(createEdit());
@@ -140,7 +140,7 @@ describe("edit history", () => {
     test("publish new edit after undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
 
         await publisher.publish(createEdit());
@@ -161,7 +161,7 @@ describe("edit history", () => {
     test("canUndo after publishing edit", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
 
         await publisher.publish(createEdit());
@@ -172,7 +172,7 @@ describe("edit history", () => {
     test("canUndo after undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
 
         await publisher.publish(createEdit());
@@ -184,7 +184,7 @@ describe("edit history", () => {
     test("canRedo after undo", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
 
         await publisher.publish(createEdit());
@@ -203,7 +203,7 @@ describe("edit history", () => {
     test("canRedo after publishing edit", async () => {
         const queue = new EditQueue(dispatcher);
         const channel = queue.createChannel();
-        const publisher = channel.createPublisher({ waitOnObservers: true });
+        const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
 
         await publisher.publish(createEdit());

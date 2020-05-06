@@ -26,7 +26,7 @@ export interface IEditChannel {
     /** Creates an object that acts as a consumer of dispatched edits that were published against the current channel. */
     createObserver(): IEditChannelObserver;
     /** Creates an object that publishes edits using the current channel to be dispatched. */
-    createPublisher(options?: IEditChannelPublisherOptions): IEditChannelPublisher;
+    createPublisher(): IEditChannelPublisher;
 }
 
 /** An object for observing dispatched edits on a channel. */
@@ -37,14 +37,6 @@ export interface IEditChannelObserver extends IEvent<IEditDispatchResult> {
 export interface IEditChannelPublisher {
     /** Publishes an edit to the queue. */
     publish(edit: IEditOperation): Promise<IEditDispatchResult>;
-    /** Sets whether or not the publisher will wait on observers before resolving a publish. */
-    waitOnObservers(value: boolean): void;
-}
-
-/** Defines options for a channel publisher. */
-export interface IEditChannelPublisherOptions {
-    /** True if a publisher should wait for observers to process an edit before resolving the publish promise; the default is false. */
-    readonly waitOnObservers?: boolean; 
 }
 
 /** Provides a mechanism for queueing and dispatching edits through one or more channels. */
@@ -63,19 +55,12 @@ export class EditQueue implements IEditQueue {
                 return this.dispatchedEdit.event;
             }
 
-            createPublisher(options?: IEditChannelPublisherOptions): IEditChannelPublisher {
-                let _waitOnObservers = options && options.waitOnObservers;
+            createPublisher(): IEditChannelPublisher {
                 return {
                     publish: edit => queue.push(this, edit).then(result => {
-                        if (_waitOnObservers) {
-                            return this.dispatchedEdit.emit(result).then(() => result);
-                        }
-                        else {
-                            this.dispatchedEdit.emit(result);
-                            return result;
-                        }
-                    }),
-                    waitOnObservers: value => _waitOnObservers = value
+                        this.dispatchedEdit.emit(result);
+                        return result;
+                    })
                 };
             }
         };
