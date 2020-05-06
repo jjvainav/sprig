@@ -1,6 +1,6 @@
 ﻿import { AsyncQueue } from "@sprig/async-queue";
 import { IEditOperation } from "@sprig/edit-operation";
-import { IEditChannel } from "@sprig/edit-queue";
+import { IEditChannelPublisher } from "@sprig/edit-queue";
 import { EditStack, IEditStackResult } from "./edit-stack";
 
 export interface IEditHistory {
@@ -28,7 +28,7 @@ export class EditHistory implements IEditHistory {
     private _isUndo = false;
     private _isRedo = false;
 
-    constructor(private readonly outgoing: IEditChannel) {
+    constructor(private readonly outgoing: IEditChannelPublisher) {
     }
 
     get checkpoint(): number | undefined {
@@ -87,7 +87,7 @@ export class EditHistory implements IEditHistory {
             this.editStack.redo.bind(this.editStack));
     }
 
-    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (channel: IEditChannel) => Promise<IEditStackResult | undefined>): Promise<IEditStackResult | undefined> {
+    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (publisher: IEditChannelPublisher) => Promise<IEditStackResult | undefined>): Promise<IEditStackResult | undefined> {
         return this.queue.push(() => {
             if (canUndoRedo()) {
                 start();

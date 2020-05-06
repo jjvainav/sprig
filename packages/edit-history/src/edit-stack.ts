@@ -1,5 +1,5 @@
 ﻿import { IEditOperation } from "@sprig/edit-operation";
-import { IEditChannel } from "@sprig/edit-queue";
+import { IEditChannelPublisher } from "@sprig/edit-queue";
 
 /** Represents an item on the edit stack. */
 export interface IEditStackItem {
@@ -72,19 +72,19 @@ export class EditStack {
         return this.redoStack.length > 0;
     }
 
-    undo(channel: IEditChannel): Promise<IEditStackResult | undefined> {
-        return this.handleUndoRedo(channel, this.undoStack, this.redoStack);
+    undo(publisher: IEditChannelPublisher): Promise<IEditStackResult | undefined> {
+        return this.handleUndoRedo(publisher, this.undoStack, this.redoStack);
     }
 
-    redo(channel: IEditChannel): Promise<IEditStackResult | undefined> {
-        return this.handleUndoRedo(channel, this.redoStack, this.undoStack);
+    redo(publisher: IEditChannelPublisher): Promise<IEditStackResult | undefined> {
+        return this.handleUndoRedo(publisher, this.redoStack, this.undoStack);
     }
 
-    private handleUndoRedo(channel: IEditChannel, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditStackResult | undefined> {
+    private handleUndoRedo(publisher: IEditChannelPublisher, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditStackResult | undefined> {
         const item = source.pop();
 
         if (item) {
-            return channel.createPublisher().publish(item.edit)
+            return publisher.publish(item.edit)
                 .then(result => {
                     if (result.success && result.response) {
                         target.push({ edit: result.response, state: item.state, checkpoint: item.checkpoint });

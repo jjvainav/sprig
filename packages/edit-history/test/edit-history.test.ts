@@ -16,7 +16,7 @@ function createEdit(): IEditOperation {
 }
 
 function createEditHistory(queue: EditQueue, channelToMonitor: IEditChannel): EditHistory {
-    const history = new EditHistory(queue.createChannel());
+    const history = new EditHistory(queue.createChannel().createPublisher());
     channelToMonitor.createObserver().on(result => {
         if (result.success && result.response) {
             history.push(result.response);

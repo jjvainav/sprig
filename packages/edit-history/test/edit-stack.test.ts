@@ -45,7 +45,7 @@ describe("edit stack", () => {
         observer.on(result => reverse.push(<IMockEdit>result.response));
 
         stack.push(edit);
-        await stack.undo(channel);
+        await stack.undo(channel.createPublisher());
 
         expect(stack.canUndo()).toBe(false);
         expect(stack.canRedo()).toBe(true);
@@ -69,8 +69,8 @@ describe("edit stack", () => {
         stack.push(edit1);
         stack.push(edit2);
 
-        await stack.undo(channel);
-        await stack.undo(channel);
+        await stack.undo(channel.createPublisher());
+        await stack.undo(channel.createPublisher());
 
         expect(edits).toHaveLength(2);
 
@@ -92,8 +92,8 @@ describe("edit stack", () => {
         observer.on(result => edits.push(result.edit));
 
         stack.push(edit);
-        await stack.undo(channel);
-        await stack.redo(channel);
+        await stack.undo(channel.createPublisher());
+        await stack.redo(channel.createPublisher());
 
         expect(stack.canUndo()).toBe(true);
         expect(stack.canRedo()).toBe(false);
@@ -118,34 +118,34 @@ describe("edit stack", () => {
 
         // empty the stack
 
-        await stack.undo(queue.createChannel());
+        await stack.undo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("2");
         expect(stack.current!.checkpoint).toBe(2);
 
-        await stack.undo(queue.createChannel());
+        await stack.undo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("1");
         expect(stack.current!.checkpoint).toBe(1);
 
-        await stack.undo(queue.createChannel());
+        await stack.undo(queue.createChannel().createPublisher());
         expect(stack.current).toBeUndefined();
 
         // redo all the edits
 
-        await stack.redo(queue.createChannel());
+        await stack.redo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("1");
         expect(stack.current!.checkpoint).toBe(1);
 
-        await stack.redo(queue.createChannel());
+        await stack.redo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("2");
         expect(stack.current!.checkpoint).toBe(2);
 
-        await stack.redo(queue.createChannel());
+        await stack.redo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("3");
         expect(stack.current!.checkpoint).toBe(3);
 
         // perform an undo and then push a new item
 
-        await stack.undo(queue.createChannel());
+        await stack.undo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("2");
         expect(stack.current!.checkpoint).toBe(2);
 
@@ -154,7 +154,7 @@ describe("edit stack", () => {
         expect(stack.current!.checkpoint).toBe(4);
 
         // item and checkpoint 3 will be discarded - verify by performing an undo and checking the checkpoint
-        await stack.undo(queue.createChannel());
+        await stack.undo(queue.createChannel().createPublisher());
         expect(stack.current!.edit.data.name).toBe("2");
         expect(stack.current!.checkpoint).toBe(2);
     });
