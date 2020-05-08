@@ -1,6 +1,6 @@
 ﻿import "jest";
 import { IEditOperation } from "@sprig/edit-operation";
-import { EditQueue, IEditDispatcher } from "../src";
+import { EditQueue, IEditDispatcher, IEditDispatchResult } from "../src";
 
 interface IMockEditData {
     readonly delay?: number;
@@ -57,8 +57,32 @@ describe("edit queue", () => {
         const publisher = channel.createPublisher();
         const edit = createEdit();
         
+        let event: IEditDispatchResult | undefined;
+        queue.onEditDispatched(e => event = e);
         const result = await publisher.publish(edit);
 
+        expect(event).toBeDefined();
+        expect(event!.channel).toBe(channel);
+
+        expect(result.success).toBe(true);
+        expect(result.channel).toBe(channel);
+        expect(result.edit).toBe(edit);
+        expect(result.error).toBeUndefined();
+        expect(result.response).toBeUndefined();
+    });
+
+    test("publish edit to private channel", async () => {
+        const queue = new EditQueue(dispatcher);
+        const channel = queue.createChannel({ isPrivate: true });
+        const publisher = channel.createPublisher();
+        const edit = createEdit();
+        
+        let flag = false;
+        queue.onEditDispatched(() => flag = true);
+
+        const result = await publisher.publish(edit);
+
+        expect(flag).toBe(false);
         expect(result.success).toBe(true);
         expect(result.channel).toBe(channel);
         expect(result.edit).toBe(edit);

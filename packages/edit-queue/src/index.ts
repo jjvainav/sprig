@@ -18,15 +18,26 @@ export interface IEditDispatchResult {
 
 /** A multi-channel queue for dispatching and executing edit operations. */
 export interface IEditQueue {
-    createChannel(): IEditChannel;
+    /** An event that gets raised whenever an edit has been dispatched; note, this will only raise edits dispatched against non-private channels. */
+    readonly onEditDispatched: IEvent<IEditDispatchResult>;
+    /** Creates a new channel used to publish edits against the queue. */
+    createChannel(options?: IEditChannelOptions): IEditChannel;
 }
 
 /** A channel for publishing and consuming edits. */
 export interface IEditChannel {
+    /** True if the edit channel is private; meaning, edits dispatched against this channel will not be broadcast via the queue's edit dispatched event. */
+    readonly isPrivate: boolean;
     /** Creates an object that acts as a consumer of dispatched edits that were published against the current channel. */
     createObserver(): IEditChannelObserver;
     /** Creates an object that publishes edits using the current channel to be dispatched. */
     createPublisher(): IEditChannelPublisher;
+}
+
+/** Options for creating an edit channel. */
+export interface IEditChannelOptions {
+    /** True if the channel should be private; the default is false. */
+    readonly isPrivate?: boolean;
 }
 
 /** An object for observing dispatched edits on a channel. */
@@ -41,24 +52,37 @@ export interface IEditChannelPublisher {
 
 /** Provides a mechanism for queueing and dispatching edits through one or more channels. */
 export class EditQueue implements IEditQueue {
+    private readonly editDispatched = new EventEmitter<IEditDispatchResult>("queue-edit-dispatched");
     private readonly queue = new AsyncQueue<void>();
 
     constructor(private readonly dispatcher: IEditDispatcher) {
     }
 
-    createChannel(): IEditChannel {
+    /** An event that gets raised whenever an edit has been dispatched; note, this will only raise edits dispatched against non-private channels. */
+    get onEditDispatched(): IEvent<IEditDispatchResult> {
+        return this.editDispatched.event;
+    }
+
+    createChannel(options?: IEditChannelOptions): IEditChannel {
         const queue = this;
         return new class EditChannel implements IEditChannel {
-            private readonly dispatchedEdit = new EventEmitter<IEditDispatchResult>("channel-edit-dispatched");
+            private readonly editDispatched = new EventEmitter<IEditDispatchResult>("channel-edit-dispatched");
+
+            readonly isPrivate = options !== undefined && options.isPrivate === true;
 
             createObserver(): IEditChannelObserver {
-                return this.dispatchedEdit.event;
+                return this.editDispatched.event;
             }
 
             createPublisher(): IEditChannelPublisher {
                 return {
                     publish: edit => queue.push(this, edit).then(result => {
-                        this.dispatchedEdit.emit(result);
+                        this.editDispatched.emit(result);
+
+                        if (!this.isPrivate) {
+                            queue.editDispatched.emit(result);
+                        }
+                        
                         return result;
                     })
                 };
