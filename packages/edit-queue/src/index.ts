@@ -34,10 +34,18 @@ export interface IEditChannel {
     createPublisher(): IEditChannelPublisher;
 }
 
+/** Provides a mechanism for extending an edit channel. */
+export interface IEditChannelExtension {
+    readonly observer?: (observer: IEditChannelObserver) => IEditChannelObserver;
+    readonly publisher?: (publisher: IEditChannelPublisher) => IEditChannelPublisher;
+}
+
 /** Options for creating an edit channel. */
 export interface IEditChannelOptions {
     /** True if the channel should be private; the default is false. */
     readonly isPrivate?: boolean;
+    /** An extension for the edit channel. */
+    readonly extend?: IEditChannelExtension;
 }
 
 /** An object for observing dispatched edits on a channel. */
@@ -65,27 +73,30 @@ export class EditQueue implements IEditQueue {
 
     createChannel(options?: IEditChannelOptions): IEditChannel {
         const queue = this;
+        const extendObserver = options && options.extend && options.extend.observer || (observer => observer);
+        const extendPublisher = options && options.extend && options.extend.publisher || (publisher => publisher);
+
         return new class EditChannel implements IEditChannel {
             private readonly editDispatched = new EventEmitter<IEditDispatchResult>("channel-edit-dispatched");
 
             readonly isPrivate = options !== undefined && options.isPrivate === true;
 
             createObserver(): IEditChannelObserver {
-                return this.editDispatched.event;
+                return extendObserver(this.editDispatched.event);
             }
 
             createPublisher(): IEditChannelPublisher {
-                return {
+                return extendPublisher({
                     publish: edit => queue.push(this, edit).then(result => {
                         this.editDispatched.emit(result);
 
                         if (!this.isPrivate) {
                             queue.editDispatched.emit(result);
                         }
-                        
+
                         return result;
                     })
-                };
+                });
             }
         };
     }
