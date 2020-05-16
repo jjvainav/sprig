@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import EventSource from "eventsource";
 
 /** Represents an error while attempting to make a request. */
 export enum RequestErrorCode {
@@ -45,7 +46,7 @@ export interface IRequest {
 
 export interface IRequestOptions {
 	readonly method: "GET" | "PATCH" | "POST" | "PUT" | "DELETE";
-	readonly url?: string;
+	readonly url: string;
 	readonly data?: any;
     readonly timeout?: number;
     readonly headers?: { readonly [key: string]: string };
@@ -57,6 +58,12 @@ export interface IRequestOptions {
      * codes and reject all others.
      */
     readonly expectedStatus?: number[] | ((status: number) => boolean);
+}
+
+/** Defines options for connection to an event-stream. Note: the data and timeout options/properties are ignored. */
+export interface IEventStreamOptions extends IRequestOptions {
+    readonly method: "GET";
+    readonly expectedStatus?: [200];
 }
 
 export interface IRequestInterceptorContext {
@@ -84,6 +91,15 @@ export interface IResponseInterceptorContext {
     readonly error?: RequestError;
 }
 
+interface IRequestInvoker {
+    (request: IRequest): Promise<IInvokeResult>;
+}
+
+interface IInvokeResult {
+    readonly request: IRequest;
+    readonly response: IResponse;
+}
+
 /** 
  * Intercepts request responses. Note: an interceptor must invoke next in order to continue the chain 
  * and resolve the request. If the function omits the context argument next will be invoked automatically by 
@@ -103,11 +119,6 @@ export interface IRequestPromise extends Promise<IResponse> {
     thenUse(interceptor: IResponseInterceptor): IRequestPromise;
 }
 
-interface IInvokeResult {
-    readonly request: IRequest;
-    readonly response: IResponse;
-}
-
 /** Determines if the specified response status code is expected by the provided request. */
 export function isExpectedStatus(request: IRequest, status: number): boolean {
     if (!request.options.expectedStatus) {
@@ -117,6 +128,46 @@ export function isExpectedStatus(request: IRequest, status: number): boolean {
     return Array.isArray(request.options.expectedStatus)
         ? (<number[]>request.options.expectedStatus).indexOf(status) > -1
         : request.options.expectedStatus(status);
+}
+
+function createErrorForResponse(request: IRequest, response: { status: number, data: any }, message?: string): RequestError {
+    const errorResponse = {
+        request: request,
+        status: response.status,
+        data: response.data
+    };
+
+    if (response.status === 408 || response.status === 504) {
+        return new RequestError({
+            code: RequestErrorCode.timeout,
+            message: message || "The request has timed out.",
+            request: request,
+            response: errorResponse
+        });
+    }
+    
+    if (response.status === 451 || response.status === 503) {
+        return new RequestError({
+            code: RequestErrorCode.serviceUnavailable,
+            message: message || "Service unavailable.",
+            request: request,
+            response: errorResponse
+        });
+    }
+    
+    return new RequestError({
+        code: RequestErrorCode.httpError,
+        message: message || `Request failed with status ${response.status}.`,
+        request: request,
+        response: errorResponse
+    });     
+}
+
+function createEventSource(options: IRequestOptions): EventSource {
+    // A couple notes about the EventSource polyfill
+    // 1) the error event will contain the http status code whereas the native EventSource does not (this is important)
+    // 2) the polyfill has issues on the browser not showing events in debug: https://github.com/Yaffle/EventSource/issues/79
+    return new EventSource(options.url, { headers: options.headers });
 }
 
 const alphabet = "abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
@@ -148,6 +199,85 @@ function validateExpectedStatus(status: number): boolean {
     return status >= 200 && status < 300;
 }
 
+const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) => {
+    axios.request({
+        url: request.options.url,
+        method: request.options.method,
+        headers: request.options.headers,
+        data: request.options.data,
+        timeout: request.options.timeout || defaultTimeout,
+        validateStatus: status => isExpectedStatus(request, status)
+    })
+    .then(response => resolve({
+        request,
+        response: {
+            request: request,
+            status: response.status,
+            data: response.data
+        }
+    }))
+    .catch(error => {
+        // note: the axios error will get thrown for responses that fail validateStatus (i.e. status codes not specified as an expected status)
+        if (isAxiosError(error)) {
+            if (error.response) {
+                reject(createErrorForResponse(request, error.response, error.message));
+            }
+            else if (error.code === "ECONNABORTED") {
+                reject(new RequestError({
+                    code: RequestErrorCode.timeout, 
+                    message: error.message,
+                    request: request
+                }));                        
+            }
+            else {
+                reject(new RequestError({
+                    code: RequestErrorCode.clientError, 
+                    message: error.message,
+                    request: request
+                }));
+            }
+        }
+        else {
+            // should never get here...
+            reject(new Error(`Unexpected error from Axios (${error.message})`));
+        }
+    });
+});
+
+const eventSourceInvoker: IRequestInvoker = request => new Promise((resolve, reject) => {
+    if (request.options.method !== "GET") {
+        return reject(new Error("method must be GET"));
+    }
+
+    const source = createEventSource(request.options);
+    const onopen = source.onopen;
+    const onerror = source.onerror;
+
+    source.onopen = event => {
+        source.onopen = onopen;
+        source.onerror = onerror;
+
+        resolve({
+            request,
+            response: {
+                request: request,
+                status: (<any>event).status,
+                data: source
+            }
+        });
+    };
+    source.onerror = event => {
+        source.onopen = onopen;
+        source.onerror = onerror;
+
+        // automatically close the event source to prevent retries
+        source.close();
+
+        // TODO: what would status and statusText be if no connection?
+        reject(createErrorForResponse(request, { status: (<any>event).status, data: {} }, (<any>event).statusText));
+    }
+});
+
 export class RequestError extends Error {
     private readonly __isRequestError = true;
 
@@ -174,6 +304,7 @@ export class RequestError extends Error {
 class RequestInstance implements IRequest {
     constructor(
         readonly options: IRequestOptions,
+        private readonly invoker: IRequestInvoker,
         private readonly requestInterceptors: IRequestInterceptor[] = [],
         private readonly responseInterceptors: IResponseInterceptor[] = []) {
     }
@@ -188,11 +319,11 @@ class RequestInstance implements IRequest {
     }
 
     invoke(): IRequestPromise {
-        return RequestInstance.invokeRequest(this, this.requestInterceptors, this.responseInterceptors);
+        return RequestInstance.invokeRequest(this, this.invoker, this.requestInterceptors, this.responseInterceptors);
     }
 
     use(interceptor: IRequestInterceptor): IRequest {
-        return new RequestInstance(this.options, [...this.requestInterceptors, interceptor]);
+        return new RequestInstance(this.options, this.invoker, [...this.requestInterceptors, interceptor], this.responseInterceptors);
     }
 
     withHeader(name: string, value: string): IRequest {
@@ -204,13 +335,13 @@ class RequestInstance implements IRequest {
             }
         };
 
-        return new RequestInstance(options, this.requestInterceptors, this.responseInterceptors);      
+        return new RequestInstance(options, this.invoker, this.requestInterceptors, this.responseInterceptors);      
     }
 
-    private static invokeRequest(request: IRequest, requestInterceptors: IRequestInterceptor[], responseInterceptors: IResponseInterceptor[]): IRequestPromise {
+    private static invokeRequest(request: IRequest, invoker: IRequestInvoker, requestInterceptors: IRequestInterceptor[], responseInterceptors: IResponseInterceptor[]): IRequestPromise {
         const promise = requestInterceptors.length > 0
-            ? RequestInstance.invokeRequestInterceptors(request, requestInterceptors)
-            : RequestInstance.invokeAxiosRequest(request);
+            ? RequestInstance.invokeRequestInterceptors(request, invoker, requestInterceptors)
+            : invoker(request);
 
         const requestPromise = promise
             .then(result => {
@@ -220,7 +351,7 @@ class RequestInstance implements IRequest {
                 }
 
                 return RequestInstance.invokeResponseInterceptors({
-                    request: new RequestInstance(request.options, requestInterceptors, responseInterceptors),
+                    request: new RequestInstance(request.options, invoker, requestInterceptors, responseInterceptors),
                     interceptors: responseInterceptors,
                     response: result.response
                 });
@@ -228,7 +359,7 @@ class RequestInstance implements IRequest {
             .catch(error => {
                 if (RequestError.isRequestError(error)) {
                     return RequestInstance.invokeResponseInterceptors({
-                        request: new RequestInstance(request.options, requestInterceptors, responseInterceptors),
+                        request: new RequestInstance(request.options, invoker, requestInterceptors, responseInterceptors),
                         interceptors: responseInterceptors,
                         error
                     });
@@ -242,93 +373,7 @@ class RequestInstance implements IRequest {
                 responseInterceptors = [...responseInterceptors, interceptor];
                 return <IRequestPromise>requestPromise;
             }
-        });        
-    }
-
-    private static createErrorForResponse(request: IRequest, response: { status: number, data: any }, message?: string): RequestError {
-        const errorResponse = {
-            request: request,
-            status: response.status,
-            data: response.data
-        };
-
-        if (response.status === 408 || response.status === 504) {
-            return new RequestError({
-                code: RequestErrorCode.timeout,
-                message: message || "The request has timed out.",
-                request: request,
-                response: errorResponse
-            });
-        }
-        
-        if (response.status === 451 || response.status === 503) {
-            return new RequestError({
-                code: RequestErrorCode.serviceUnavailable,
-                message: message || "Service unavailable.",
-                request: request,
-                response: errorResponse
-            });
-        }
-        
-        return new RequestError({
-            code: RequestErrorCode.httpError,
-            message: message || `Request failed with status ${response.status}.`,
-            request: request,
-            response: errorResponse
         });     
-    }
-
-    private static invokeAxiosRequest(request: IRequest): Promise<IInvokeResult> {
-        if (!request.options.url) {
-            // the error Axios throws when url is not defined is not very friendly so manually perform the check before calling Axios:
-            // https://github.com/axios/axios/issues/632
-            throw new Error("Request url not defined");
-        }
-
-        return new Promise<IInvokeResult>((resolve, reject) => {
-            axios.request({
-                url: request.options.url,
-                method: request.options.method,
-                headers: request.options.headers,
-                data: request.options.data,
-                timeout: request.options.timeout || defaultTimeout,
-                validateStatus: status => isExpectedStatus(request, status)
-            })
-            .then(response => resolve({
-                request,
-                response: {
-                    request: request,
-                    status: response.status,
-                    data: response.data
-                }
-            }))
-            .catch(error => {
-                // note: the axios error will get thrown for responses that fail validateStatus (i.e. status codes not specified as an expected status)
-                if (isAxiosError(error)) {
-                    if (error.response) {
-                        reject(RequestInstance.createErrorForResponse(request, error.response, error.message));
-                    }
-                    else if (error.code === "ECONNABORTED") {
-                        reject(new RequestError({
-                            code: RequestErrorCode.timeout, 
-                            message: error.message,
-                            request: request
-                        }));                        
-                    }
-                    else {
-                        reject(new RequestError({
-                            code: RequestErrorCode.clientError, 
-                            message: error.message,
-                            request: request
-                        }));
-                    }
-                }
-                else {
-                    // should never get here...
-                    reject(new Error(`Unexpected error from Axios (${error.message})`));
-                }
-            });
-        })
     }
 
     private static invokeResponseInterceptors(args: { request: IRequest; interceptors: IResponseInterceptor[]; response?: IResponse; error?: RequestError }): Promise<IResponse> {
@@ -382,7 +427,7 @@ class RequestInstance implements IRequest {
         });
     }
 
-    private static invokeRequestInterceptors(request: IRequest, interceptors: IRequestInterceptor[]): Promise<IInvokeResult> {
+    private static invokeRequestInterceptors(request: IRequest, invoker: IRequestInvoker, interceptors: IRequestInterceptor[]): Promise<IInvokeResult> {
         return new Promise<IInvokeResult>((resolve, reject) => {
             let i = 0;
             let done = false;
@@ -403,7 +448,7 @@ class RequestInstance implements IRequest {
                         // after invoking all the interceptors make the axios request
                         done = true;
                         // the request interceptors may have modified the request so pass the request from the context instead of using 'this'
-                        RequestInstance.invokeAxiosRequest(current.request)
+                        invoker(current.request)
                             .then(resolve)
                             .catch(reject);
                     }
@@ -427,7 +472,7 @@ class RequestInstance implements IRequest {
                         });
                     }
                     else {
-                        reject(RequestInstance.createErrorForResponse(request, response));
+                        reject(createErrorForResponse(request, response));
                     }            
                 },
                 reject: error => {
@@ -467,8 +512,16 @@ class RequestInstance implements IRequest {
 }
 
 export const client = {
+    /** Invokes an HTTP request. */
     request(options: IRequestOptions): IRequest {
         // TODO: need to check if a network connection is available
-        return injectRequestId(new RequestInstance(options));
+        return injectRequestId(new RequestInstance(options, axiosInvoker));
+    },
+    /** 
+     * Connects to an HTTP endpoint that opens an event-stream; if successful, the response data will contain a reference to the EventSource. 
+     * Note: response interceptors will only be invoked on the initial connection and not agains received event messages.
+     */
+    stream(options: IEventStreamOptions): IRequest {
+        return injectRequestId(new RequestInstance(options, eventSourceInvoker));
     }
 };

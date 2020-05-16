@@ -1,12 +1,15 @@
 import axios, { AxiosError, AxiosResponse } from "axios";
+import EventSource from "eventsource";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
 import { basicAuthentication } from "../src";
 import { client, RequestErrorCode, RequestError } from "../src/client";
 
 jest.mock("axios");
+jest.genMockFromModule("eventsource");
+jest.mock("eventsource");
 
-interface IMockResponse {
+interface IMockAxiosResponse {
     axiosErrorCode?: string;
     data?: any;
     status?: number;
@@ -14,7 +17,11 @@ interface IMockResponse {
     request?: any;
 }
 
-function mockResponse(response: IMockResponse) {
+interface IMockEventSourceResponse {
+    status?: number;
+}
+
+function mockAxiosResponse(response: IMockAxiosResponse) {
     const fn = mocked(axios.request).mockImplementation(() => {
         if (response.axiosErrorCode) {
             const error = new Error("error") as AxiosError;
@@ -46,7 +53,69 @@ function mockResponse(response: IMockResponse) {
     return fn.mock;
 }
 
-function toAxiosResponse(response: IMockResponse): AxiosResponse {
+function mockEventSourceResponse(response?: IMockEventSourceResponse) {
+    response = response || {};
+    response = response.status ? response : { ...response, status: 200 };
+
+    const fn = mocked(EventSource).mockImplementation((url, options) => new class implements EventSource {
+        readonly CLOSED = 2;
+        readonly CONNECTING = 0;
+        readonly OPEN = 1;
+        readonly options = options;
+        readonly url = url;
+        readonly readyState = 0;
+        readonly withCredentials = false;
+
+        onopen!: (evt: MessageEvent) => any;
+        onmessage!: (evt: MessageEvent) => any;
+        onerror!: (evt: MessageEvent) => any;
+
+        constructor() {
+            (<any>this).onopen = null;
+            (<any>this).onmessage = null;
+            (<any>this).onerror = null;
+
+            setTimeout(() => this.connect(), 0);
+        }
+
+        addEventListener(type: string, listener: EventListener): void {
+            throw new Error("Not implemented.");
+        }
+
+        dispatchEvent(evt: Event): boolean {
+            throw new Error("Not implemented.");
+        }
+
+        removeEventListener(type: string, listener?: EventListener): void {
+            throw new Error("Not implemented.");
+        }
+
+        close(): void {
+            (<any>this).readyState = this.CLOSED;
+        }
+
+        private connect(): void {
+            if (response!.status === 200) {
+                if (this.onopen !== null) {
+                    const event = new MessageEvent("");
+                    (<any>event).status = response!.status;
+                    this.onopen(event);
+                }
+            }
+            else if (this.onerror !== null) {
+                const event = new MessageEvent("error");
+                (<any>event).status = response!.status;
+                this.onerror(event);
+            }
+        }
+    });
+
+    fn.mockClear();
+
+    return fn.mock;
+}
+
+function toAxiosResponse(response: IMockAxiosResponse): AxiosResponse {
     return {
         data: response.data || {},
         status: response.status || 200,
@@ -57,9 +126,9 @@ function toAxiosResponse(response: IMockResponse): AxiosResponse {
     }
 }
 
-describe("request", () => {
+describe.skip("request", () => {
     test("with success status", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const result = await client.request({
             method: "GET",
@@ -71,7 +140,7 @@ describe("request", () => {
     });
 
     test("with header option", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const result = await client.request({
             method: "GET",
@@ -87,7 +156,7 @@ describe("request", () => {
     });
 
     test("with header added using fluent request interface", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const result = await client.request({
             method: "GET",
@@ -103,7 +172,7 @@ describe("request", () => {
     });
 
     test("with multiple headers added by request interceptors and fluent interface", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const result = await client.request({
             method: "GET",
@@ -131,7 +200,7 @@ describe("request", () => {
     });
 
     test("with auto generated request id", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const request = client.request({
             method: "GET",
@@ -146,7 +215,7 @@ describe("request", () => {
     });
 
     test("with custom request id", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const request = client.request({
             method: "GET",
@@ -161,7 +230,7 @@ describe("request", () => {
     });
 
     test("with bad request status", async () => {
-        mockResponse({ status: 400 });
+        mockAxiosResponse({ status: 400 });
 
         try {
             await client.request({
@@ -181,7 +250,7 @@ describe("request", () => {
     });  
     
     test("with timeout request status", async () => {
-        mockResponse({ status: 408 });
+        mockAxiosResponse({ status: 408 });
 
         try {
             await client.request({
@@ -200,7 +269,7 @@ describe("request", () => {
     }); 
     
     test("with axios abort error", async () => {
-        mockResponse({ axiosErrorCode: "ECONNABORTED" });
+        mockAxiosResponse({ axiosErrorCode: "ECONNABORTED" });
 
         try {
             await client.request({
@@ -218,7 +287,7 @@ describe("request", () => {
     });  
     
     test("with unknown axios error", async () => {
-        mockResponse({ axiosErrorCode: "UNKNOWN" });
+        mockAxiosResponse({ axiosErrorCode: "UNKNOWN" });
 
         try {
             await client.request({
@@ -236,7 +305,7 @@ describe("request", () => {
     });
 
     test("with async request interceptor", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         let value = "";
 
         await client.request({
@@ -260,7 +329,7 @@ describe("request", () => {
     });
 
     test("with request interceptor that manually resolves", async () => {
-        const mock = mockResponse({ status: 200 });
+        const mock = mockAxiosResponse({ status: 200 });
         
         const result = await client.request({
             method: "GET",
@@ -280,7 +349,7 @@ describe("request", () => {
     });
 
     test("with request interceptor that manually resolves with unexpected status code", async () => {
-        const mock = mockResponse({ status: 200 });
+        const mock = mockAxiosResponse({ status: 200 });
         
         try {
             await client.request({
@@ -307,7 +376,7 @@ describe("request", () => {
     });    
 
     test("with request interceptor that manually rejects", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         
         try {
             await client.request({
@@ -331,7 +400,7 @@ describe("request", () => {
     }); 
 
     test("with request interceptor that doesn't provide a new context", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         
         const result = await client.request({
             method: "GET",
@@ -352,7 +421,7 @@ describe("request", () => {
     });    
 
     test("with response interceptor", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         
         let value = "";
         await client.request({
@@ -366,7 +435,7 @@ describe("request", () => {
     });
 
     test("with multiple response interceptors", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         
         let value = "";
         await client.request({
@@ -382,7 +451,7 @@ describe("request", () => {
     });
 
     test("with response interceptor that breaks interceptor chain", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         
         let value = "";
         let final = "";
@@ -410,7 +479,7 @@ describe("request", () => {
     });
 
     test("with response interceptor that doesn't provide new context", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
         
         let value = "";
         let final = "";
@@ -438,7 +507,7 @@ describe("request", () => {
     });    
     
     test("with basic authentication header interceptor", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const result = await client.request({
             method: "GET",
@@ -453,7 +522,7 @@ describe("request", () => {
     });
 
     test("invoke multiple times with request interceptors", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const request = client.request({
             method: "GET",
@@ -485,7 +554,7 @@ describe("request", () => {
     }); 
     
     test("invoke multiple times with different response interceptors", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const request = client.request({
             method: "GET",
@@ -510,7 +579,7 @@ describe("request", () => {
     });    
     
     test("invoke request from response interceptor", async () => {
-        mockResponse({ status: 200 });
+        mockAxiosResponse({ status: 200 });
 
         const request = client.request({
             method: "GET",
@@ -543,4 +612,111 @@ describe("request", () => {
 
         expect(result).toBe("abac");
     });    
+});
+
+describe("stream", () => {
+    test("with success status", async () => {
+        mockEventSourceResponse();
+
+        const result = await client.stream({ 
+            method: "GET",
+            url: "http://localhost" 
+        })
+        .invoke();
+
+        expect(result.status).toBe(200);
+        expect((<EventSource>result.data).onopen).toBeDefined();
+        expect((<EventSource>result.data).onopen).toBeNull();
+        expect((<EventSource>result.data).onerror).toBeNull();
+        expect((<EventSource>result.data).onmessage).toBeNull();
+    });
+
+    test("with header option", async () => {
+        mockEventSourceResponse();
+
+        const result = await client.stream({
+            method: "GET",
+            headers: { "Authorization": "Bearer token" },
+            url: "http://localhost"
+        })
+        .invoke();
+
+        expect(result.status).toBe(200);
+        expect(result.request.options.headers).toBeDefined();
+        expect(result.request.options.headers!["Authorization"]).toBeDefined();
+        expect(result.request.options.headers!["Authorization"]).toBe("Bearer token");
+
+        expect(result.data.options.headers).toBeDefined();
+        expect(result.data.options.headers!["Authorization"]).toBeDefined();
+        expect(result.data.options.headers!["Authorization"]).toBe("Bearer token");
+    });
+
+    test("with multiple headers added by request interceptors and fluent interface", async () => {
+        mockEventSourceResponse();
+
+        const result = await client.stream({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .withHeader("Authorization", "Bearer token")
+        .use(context => {
+            context.next({
+                ...context,
+                request: context.request
+                    .withHeader("X-Span-ID", "1")
+                    .withHeader("X-Trace-ID", "2")
+            });            
+        })
+        .invoke();
+
+        expect(result.status).toBe(200);
+        expect(result.request.options.headers).toBeDefined();
+        expect(result.request.options.headers!["Authorization"]).toBeDefined();
+        expect(result.request.options.headers!["Authorization"]).toBe("Bearer token");
+        expect(result.request.options.headers!["X-Span-ID"]).toBeDefined();
+        expect(result.request.options.headers!["X-Span-ID"]).toBe("1");
+        expect(result.request.options.headers!["X-Trace-ID"]).toBeDefined();
+        expect(result.request.options.headers!["X-Trace-ID"]).toBe("2"); 
+        
+        expect(result.data.options.headers).toBeDefined();
+        expect(result.data.options.headers!["Authorization"]).toBeDefined();
+        expect(result.data.options.headers!["Authorization"]).toBe("Bearer token");
+        expect(result.data.options.headers!["X-Span-ID"]).toBeDefined();
+        expect(result.data.options.headers!["X-Span-ID"]).toBe("1");
+        expect(result.data.options.headers!["X-Trace-ID"]).toBeDefined();
+        expect(result.data.options.headers!["X-Trace-ID"]).toBe("2"); 
+    });
+
+    test("with multiple response interceptors", async () => {
+        mockEventSourceResponse();
+        
+        let value = "";
+        await client.stream({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .invoke()
+        .thenUse(() => value = value + "a")
+        .thenUse(() => value = value + "b")
+        .thenUse(() => value = value + "c");
+
+        expect(value).toBe("abc");
+    });
+
+    test("with failed connection", async () => {
+        mockEventSourceResponse({ status: 406 });
+        
+        let error: RequestError | undefined;
+        await client.stream({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .invoke()
+        .catch(err => error = err);
+
+        expect(error).toBeDefined();
+        expect(error!.code).toBe(RequestErrorCode.httpError);
+        expect(error!.response).toBeDefined();
+        expect(error!.response!.status).toBe(406);
+    });
 });
