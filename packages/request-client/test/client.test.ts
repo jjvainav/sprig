@@ -126,7 +126,7 @@ function toAxiosResponse(response: IMockAxiosResponse): AxiosResponse {
     }
 }
 
-describe.skip("request", () => {
+describe("request", () => {
     test("with success status", async () => {
         mockAxiosResponse({ status: 200 });
 

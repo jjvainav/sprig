@@ -1,7 +1,10 @@
 // put this at the top to prevent any hoisting issues with TS and jest
 jest.mock("axios");
+jest.genMockFromModule("eventsource");
+jest.mock("eventsource");
 
 import axios, { AxiosError, AxiosPromise, AxiosRequestConfig, AxiosResponse } from "axios";
+import EventSource, { EventSourceInitDict } from "eventsource";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
 import * as url from "url";
@@ -20,8 +23,10 @@ export interface IMockResponseOptions extends IMockResponse {
 }
 
 export interface IMockRequestContext {
+    /** The jest mock context for the EventSource used for a client stream. */
+    readonly mockEventSource: jest.MockContext<EventSource, [string, (EventSourceInitDict | undefined)?]>;
     /** The jest mock context for the Axios request function. */
-    readonly mock: jest.MockContext<AxiosPromise, [AxiosRequestConfig]>;
+    readonly mockRequest: jest.MockContext<AxiosPromise, [AxiosRequestConfig]>;
     /** A list of requests. */
     readonly requests: IRequestOptions[];
 }
@@ -60,9 +65,86 @@ mockRequest.mockImplementation(config => {
     return Promise.reject(error);    
 });
 
+const mockEventSource = mocked(EventSource);
+mockEventSource.mockImplementation((url, options) => new class implements EventSource {
+    readonly CLOSED = 2;
+    readonly CONNECTING = 0;
+    readonly OPEN = 1;
+    readonly options = options;
+    readonly url = url;
+    readonly readyState = 0;
+    readonly withCredentials = false;
+
+    onopen!: (evt: MessageEvent) => any;
+    onmessage!: (evt: MessageEvent) => any;
+    onerror!: (evt: MessageEvent) => any;
+
+    constructor() {
+        (<any>this).onopen = null;
+        (<any>this).onmessage = null;
+        (<any>this).onerror = null;
+
+        setTimeout(() => this.connect(), 0);
+    }
+
+    addEventListener(type: string, listener: EventListener): void {
+        throw new Error("Not implemented.");
+    }
+
+    dispatchEvent(evt: Event): boolean {
+        throw new Error("Not implemented.");
+    }
+
+    removeEventListener(type: string, listener?: EventListener): void {
+        throw new Error("Not implemented.");
+    }
+
+    close(): void {
+        (<any>this).readyState = this.CLOSED;
+    }
+
+    private connect(): void {
+        const url = this.url || "/";
+        const currentRequest = requests.get(url);
+    
+        if (!currentRequest) {
+            throw new Error(`EventSource invoked with url (${url}) and no client request was captured.`);
+        }
+
+        invokedRequests.push(currentRequest);
+        const response = getResponse(currentRequest);
+
+        if (response.status === 200) {
+            if (this.onopen !== null) {
+                const event = new MessageEvent("");
+                (<any>event).status = response.status;
+                this.onopen(event);
+            }
+        }
+        else if (this.onerror !== null) {
+            const event = new MessageEvent("error");
+            (<any>event).status = response.status;
+            this.onerror(event);
+        }
+
+        if (response.status === 200 && response.data) {
+            setTimeout(() => {
+                if (this.onmessage) {
+                    const event = new MessageEvent("", { data: response.data });
+                    (<any>event).status = response.status;
+                    this.onmessage(event); 
+                }
+            }, 0);
+        }
+    }
+});
+
 const invokedRequests: IRequestOptions[] = [];
 const mockContext: IMockRequestContext = {
-    get mock(): jest.MockContext<AxiosPromise, [AxiosRequestConfig]> { 
+    get mockEventSource(): jest.MockContext<EventSource, [string, (EventSourceInitDict | undefined)?]> { 
+        return mockEventSource.mock;
+    },
+    get mockRequest(): jest.MockContext<AxiosPromise, [AxiosRequestConfig]> { 
         return <jest.MockContext<AxiosPromise, [AxiosRequestConfig]>>mockRequest.mock;
     },
     get requests(): IRequestOptions[] {
@@ -70,14 +152,21 @@ const mockContext: IMockRequestContext = {
     }
 };
 
-const ref = client.request;
+const __request = client.request;
 client.request = options => {
     requests.set(options.url || "/", options);
-    return ref(options);
+    return __request(options);
+};
+
+const __stream = client.stream;
+client.stream = options => {
+    requests.set(options.url || "/", options);
+    return __stream(options);
 };
 
 /** Clears all the saved and captured state for the request mock. */
 export function mockClear(): void {
+    mockEventSource.mockClear();
     mockRequest.mockClear();
     invokedRequests.splice(0);
     requests.clear();

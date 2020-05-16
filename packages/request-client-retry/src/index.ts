@@ -1,4 +1,4 @@
-import { IResponse, IResponseInterceptor, RequestError,  RequestErrorCode, IResponseInterceptorContext } from "@sprig/request-client";
+import { IResponse, IResponseInterceptor, RequestError, RequestErrorCode, IResponseInterceptorContext } from "@sprig/request-client";
 
 export type RetryEvent = { response?: IResponse, error?: RequestError };
 type NotOptional<T> = { readonly [key in keyof T]-?: T[key] };

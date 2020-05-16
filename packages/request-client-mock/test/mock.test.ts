@@ -1,8 +1,9 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "../src";
-import client, { IRequestOptions } from "@sprig/request-client";
+import client, { IRequestOptions, RequestError, RequestErrorCode } from "@sprig/request-client";
+import EventSource from "eventsource";
 
-describe("request client mock", () => {
+describe("client request mock", () => {
     beforeEach(mockClear);
 
     test("mock response", async () => {
@@ -250,7 +251,7 @@ describe("request client mock", () => {
         })
         .invoke();
 
-        expect(request.mock.calls).toHaveLength(1);
+        expect(request.mockRequest.calls).toHaveLength(1);
         expect(request.requests).toHaveLength(1);
         expect(request.requests[0].method).toBe("GET");
         expect(request.requests[0].url).toBe("http://localhost");
@@ -266,7 +267,7 @@ describe("request client mock", () => {
         await client.request({ method: "GET", url: "http://localhost" }).invoke();
         await client.request({ method: "GET", url: "http://localhost" }).invoke();
 
-        expect(request.mock.calls).toHaveLength(3);
+        expect(request.mockRequest.calls).toHaveLength(3);
         expect(request.requests).toHaveLength(3);
     });    
 
@@ -287,7 +288,48 @@ describe("request client mock", () => {
 
         await client.request({ method: "GET", url: "http://localhost" }).invoke();
 
-        expect(request.mock.calls).toHaveLength(1);
+        expect(request.mockRequest.calls).toHaveLength(1);
         expect(request.requests).toHaveLength(1);
     });    
+});
+
+describe("client stream mock", () => {
+    beforeEach(mockClear);
+
+    test("mock response", async done => {
+        // a simple test to ensure the mock is hooking into the EventSource properly
+        mockResponse({ 
+            status: 200,
+            data: { foo: "bar" }
+        });
+
+        const result = await client.stream({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .invoke();
+
+        const source = <EventSource>result.data;
+        source.onmessage = e => {
+            expect(e.data.foo).toBe("bar");
+            done();
+        };
+    });
+
+    test("mock response with bad request status", async () => {
+        mockResponse({ status: 406 });
+
+        let error: RequestError | undefined;
+        await client.stream({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .invoke()
+        .catch(err => error = err);
+
+        expect(error).toBeDefined();
+        expect(error!.code).toBe(RequestErrorCode.httpError);
+        expect(error!.response).toBeDefined();
+        expect(error!.response!.status).toBe(406);
+    }); 
 });
