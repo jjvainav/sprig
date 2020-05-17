@@ -1,11 +1,8 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
+import { RequestEventStream } from "../src"
 
-import { IEvent } from "@sprig/event-emitter";
-import client from "@sprig/request-client";
-import { eventEmitter, IMessageEvent } from "../src"
-
-describe("stream eventEmitter", () => { 
+describe("request event stream", () => { 
     beforeEach(() => {
         mockClear();
     });
@@ -16,17 +13,74 @@ describe("stream eventEmitter", () => {
             data: { foo: "bar" }
         });
 
-        const result = await client.stream({
+        const stream = new RequestEventStream({
             method: "GET",
             url: "http://localhost"
-        })
-        .invoke()
-        .thenUse(eventEmitter);
+        });
 
-        const event = <IEvent<IMessageEvent>>result.data;
-        event.on(e => {
+        stream.onMessage(e => {
             expect(e.data.foo).toBe("bar");
             done();
         });
+    });
+
+    test("verify lazy connect", async done => {
+        mockResponse({ 
+            status: 200,
+            data: { foo: "bar" }
+        });
+
+        const stream = new RequestEventStream({
+            method: "GET",
+            url: "http://localhost"
+        });
+
+        stream.onOpen(() => {
+            expect(stream.isConnected).toBe(true);
+            done();
+        });
+
+        expect(stream.isConnected).toBe(false);
+        stream.onMessage(() => {});
+    });
+
+    test("verify immediate auto close", async done => {
+        mockResponse({ 
+            status: 200,
+            data: { foo: "bar" }
+        });
+
+        const stream = new RequestEventStream({
+            method: "GET",
+            url: "http://localhost"
+        });
+
+        stream.onClose(() => {
+            expect(stream.isConnected).toBe(false);
+            done();
+        });
+
+        stream.onMessage(() => {}).remove();
+    });
+
+    test("verify lazy auto close", async done => {
+        mockResponse({ 
+            status: 200,
+            data: { foo: "bar" }
+        });
+
+        const stream = new RequestEventStream({
+            method: "GET",
+            url: "http://localhost"
+        });
+
+        stream.onClose(() => {
+            expect(stream.isConnected).toBe(false);
+            done();
+        });
+
+        // need to wait for the stream to open before removing and closing
+        stream.onOpen(() => listener.remove());
+        const listener = stream.onMessage(() => {});
     });
 });

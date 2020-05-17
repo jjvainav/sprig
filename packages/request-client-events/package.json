@@ -1,6 +1,6 @@
 {
     "name": "@sprig/request-client-events",
-    "description": "A response interceptor for the request client that wraps the EventSource as an EventEmitter.",
+    "description": "A wrapper for the request client that exposes EventSource events using EventEmitters.",
     "version": "0.1.33",
     "license": "MIT",
     "repository": {
