@@ -28,7 +28,7 @@ export interface IEventStreamEmitterOptions extends IEventStreamOptions {
 }
 
 /** Defines the events for a server-sent event stream. */
-export interface IServerSentEvents {
+export interface IRequestEventStream {
     readonly isConnected: boolean;
     readonly onClose: IEvent;
     readonly onError: IEvent<IEventStreamError>;
@@ -46,7 +46,7 @@ function isEventSource(data: any): data is EventSource {
  * Note: the connection is lazy and won't be established until a listener has been registered with the onMessage event
  * and will automatically be closed once all listeners have been unregistered.
  */
-export class RequestEventStream implements IServerSentEvents {
+export class RequestEventStream implements IRequestEventStream {
     private readonly close = new EventEmitter("sse-close");
     private readonly error = new EventEmitter<IEventStreamError>("sse-error");
     private readonly open = new EventEmitter("sse-open");
