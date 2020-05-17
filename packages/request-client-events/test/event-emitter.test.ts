@@ -24,6 +24,21 @@ describe("request event stream", () => {
         });
     });
 
+    test("with custom validator", async done => {
+        mockResponse({ status: 200, data: "100" });
+
+        const stream = new RequestEventStream<number>({
+            method: "GET",
+            url: "http://localhost",
+            validate: (data, resolve) => resolve(Number.parseInt(data))
+        });
+
+        stream.onMessage(e => {
+            expect(e.data).toBe(100);
+            done();
+        });
+    });
+
     test("verify lazy connect", async done => {
         mockResponse({ 
             status: 200,
