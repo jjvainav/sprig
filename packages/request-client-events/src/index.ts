@@ -64,8 +64,7 @@ const jsonValidator: IMessageValidator<any> = (data, resolve, reject) => {
 };
 
 function isEventSource(data: any): data is EventSource {
-    // the onmessage should always be defined and defaults to null if no handlers are registered with the EventSource
-    return (<EventSource>data).onmessage !== undefined;
+    return (<EventSource>data).readyState !== undefined;
 }
 
 /** 
@@ -166,16 +165,23 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                     this.isConnecting = false;
                     this.open.emit();
                 })
-                .catch((err: RequestError) => {
+                .catch((err: Error) => {
                     this.isConnecting = false;
-
-                    // TODO: need to test and add better error handling
-                    // -- handle when RequestError code is something other than http
-                    this.error.emit({
-                        type: "http",
-                        status: err.response && err.response.status,
-                        message: err.message
-                    });
+                    if (RequestError.isRequestError(err)) {
+                        // TODO: need to test and add better error handling
+                        // -- handle when RequestError code is something other than http
+                        this.error.emit({
+                            type: "http",
+                            status: err.response && err.response.status,
+                            message: err.message
+                        });
+                    }
+                    else {
+                        this.error.emit({
+                            type: "stream",
+                            message: err.message
+                        });
+                    }
                 });
         }
 
