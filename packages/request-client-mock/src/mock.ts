@@ -67,12 +67,13 @@ mockRequest.mockImplementation(config => {
 
 const mockEventSource = mocked(EventSource);
 mockEventSource.mockImplementation((url, options) => new class implements EventSource {
+    private _readyState = 0;
+
     readonly CLOSED = 2;
     readonly CONNECTING = 0;
     readonly OPEN = 1;
     readonly options = options;
     readonly url = url;
-    readonly readyState = 0;
     readonly withCredentials = false;
 
     onopen!: (evt: MessageEvent) => any;
@@ -85,6 +86,10 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
         (<any>this).onerror = null;
 
         setTimeout(() => this.connect(), 0);
+    }
+
+    get readyState(): number {
+        return this._readyState;
     }
 
     addEventListener(type: string, listener: EventListener): void {
@@ -100,7 +105,7 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
     }
 
     close(): void {
-        (<any>this).readyState = this.CLOSED;
+        this._readyState = this.CLOSED;
     }
 
     private connect(): void {
@@ -111,31 +116,40 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
             throw new Error(`EventSource invoked with url (${url}) and no client request was captured.`);
         }
 
+        this._readyState = this.CONNECTING;
+
         invokedRequests.push(currentRequest);
         const response = getResponse(currentRequest);
 
-        if (response.status === 200) {
-            if (this.onopen !== null) {
-                const event = new MessageEvent("");
-                (<any>event).status = response.status;
-                this.onopen(event);
-            }
-        }
-        else if (this.onerror !== null) {
-            const event = new MessageEvent("error");
-            (<any>event).status = response.status;
-            this.onerror(event);
-        }
-
-        if (response.status === 200 && response.data) {
-            setTimeout(() => {
-                if (this.onmessage) {
-                    const event = new MessageEvent("", { data: response.data });
+        setTimeout(() => {
+            if (response.status === 200) {
+                if (this.onopen !== null) {
+                    const event = new MessageEvent("");
                     (<any>event).status = response.status;
-                    this.onmessage(event); 
+                    this._readyState = this.OPEN;
+                    this.onopen(event);
                 }
-            }, 0);
-        }
+            }
+            else if (this.onerror !== null) {
+                const event = new MessageEvent("error");
+                (<any>event).status = response.status;
+                // TODO: an event source will be closed if an error occurs during connection but what about if an error happens after the connection is already open?
+                this._readyState = this.CLOSED;
+                this.onerror(event);
+            }
+
+            if (response.status === 200 && response.data) {
+                setTimeout(() => {
+                    if (this.onmessage) {
+                        const event = new MessageEvent("", { data: response.data });
+                        (<any>event).status = response.status;
+                        this.onmessage(event); 
+                    }
+                }, 
+                0);
+            }
+        },
+        0);
     }
 });
 

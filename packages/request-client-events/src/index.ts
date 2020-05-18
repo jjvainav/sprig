@@ -36,11 +36,17 @@ export interface IEventStreamEmitterOptions<TData> extends IEventStreamOptions {
 
 /** Defines the events for a server-sent event stream. */
 export interface IRequestEventStream<TData = any> {
-    readonly isConnected: boolean;
     readonly onClose: IEvent;
     readonly onError: IEvent<IEventStreamError>;
     readonly onMessage: IEvent<IMessageEvent<TData>>;
     readonly onOpen: IEvent;
+    readonly readyState: ReadyState;
+}
+
+export enum ReadyState { 
+    connecting = 0, 
+    open = 1, 
+    closed = 2 
 }
 
 const jsonValidator: IMessageValidator<any> = (data, resolve, reject) => {
@@ -109,10 +115,6 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
         };
     }
 
-    get isConnected(): boolean {
-        return this.source !== undefined;
-    }
-
     get onClose(): IEvent {
         return this.close.event;
     }
@@ -127,6 +129,14 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
 
     get onOpen(): IEvent {
         return this.open.event;
+    }
+
+    get readyState(): ReadyState {
+        return this.source 
+            ? this.source.readyState 
+            : this.isConnecting
+                ? ReadyState.connecting
+                : ReadyState.closed;
     }
 
     private connect(options: IEventStreamEmitterOptions<TData>): Promise<void> {

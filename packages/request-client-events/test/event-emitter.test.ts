@@ -1,6 +1,6 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
-import { RequestEventStream } from "../src"
+import { ReadyState, RequestEventStream } from "../src"
 
 describe("request event stream", () => { 
     beforeEach(() => {
@@ -50,13 +50,13 @@ describe("request event stream", () => {
             url: "http://localhost"
         });
 
-        stream.onOpen(() => {
-            expect(stream.isConnected).toBe(true);
+        stream.onOpen(() => expect(stream.readyState).toBe(ReadyState.open));
+
+        expect(stream.readyState).toBe(ReadyState.closed);
+        stream.onMessage(() => {
+            expect(stream.readyState).toBe(ReadyState.open);
             done();
         });
-
-        expect(stream.isConnected).toBe(false);
-        stream.onMessage(() => {});
     });
 
     test("verify immediate auto close", async done => {
@@ -71,7 +71,7 @@ describe("request event stream", () => {
         });
 
         stream.onClose(() => {
-            expect(stream.isConnected).toBe(false);
+            expect(stream.readyState).toBe(ReadyState.closed);
             done();
         });
 
@@ -90,7 +90,7 @@ describe("request event stream", () => {
         });
 
         stream.onClose(() => {
-            expect(stream.isConnected).toBe(false);
+            expect(stream.readyState).toBe(ReadyState.closed);
             done();
         });
 
