@@ -34,13 +34,17 @@ export interface IEventStreamEmitterOptions<TData> extends IEventStreamOptions {
     readonly validate?: IMessageValidator<TData>;
 }
 
-/** Defines the events for a server-sent event stream. */
+/** 
+ * Defines the events for a server-sent event stream. Note: a stream will automatically
+ * close close when all onMessage listeners are unregistered.
+ */
 export interface IRequestEventStream<TData = any> {
     readonly onClose: IEvent;
     readonly onError: IEvent<IEventStreamError>;
     readonly onMessage: IEvent<IMessageEvent<TData>>;
     readonly onOpen: IEvent;
     readonly readyState: ReadyState;
+    close(): void;
 }
 
 export enum ReadyState { 
@@ -73,11 +77,11 @@ function isEventSource(data: any): data is EventSource {
  * and will automatically be closed once all listeners have been unregistered.
  */
 export class RequestEventStream<TData = any> implements IRequestEventStream<TData> {
-    private readonly close = new EventEmitter("sse-close");
-    private readonly error = new EventEmitter<IEventStreamError>("sse-error");
-    private readonly open = new EventEmitter("sse-open");
+    private readonly _close = new EventEmitter("sse-close");
+    private readonly _error = new EventEmitter<IEventStreamError>("sse-error");
+    private readonly _open = new EventEmitter("sse-open");
 
-    private readonly message: EventEmitter<IMessageEvent<TData>>;
+    private readonly _message: EventEmitter<IMessageEvent<TData>>;
     private readonly validate: IMessageValidator<TData>;
     private source?: EventSource;
 
@@ -87,7 +91,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
         const self = this;
 
         this.validate = options.validate || jsonValidator;
-        this.message = new class extends EventEmitter<IMessageEvent<TData>> {
+        this._message = new class extends EventEmitter<IMessageEvent<TData>> {
             constructor() {
                 super("sse-message");
             }
@@ -105,29 +109,27 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
 
             private autoClose(): void {
                 // automatically close if there are no listeners registered
-                if (!this.count && self.source) {
-                    self.source.close();
-                    self.source = undefined;
-                    self.close.emit();
+                if (!this.count) {
+                    self.close();
                 }
             }
         };
     }
 
     get onClose(): IEvent {
-        return this.close.event;
+        return this._close.event;
     }
 
     get onError(): IEvent<IEventStreamError> {
-        return this.error.event;
+        return this._error.event;
     }
 
     get onMessage(): IEvent<IMessageEvent<TData>> {
-        return this.message.event;
+        return this._message.event;
     }
 
     get onOpen(): IEvent {
-        return this.open.event;
+        return this._open.event;
     }
 
     get readyState(): ReadyState {
@@ -136,6 +138,14 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
             : this.isConnecting
                 ? ReadyState.connecting
                 : ReadyState.closed;
+    }
+
+    close(): void {
+        if (this.source) {
+            this.source.close();
+            this.source = undefined;
+            this._close.emit();
+        }
     }
 
     private connect(options: IEventStreamEmitterOptions<TData>): Promise<void> {
@@ -157,27 +167,27 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                     this.source = response.data;
                     this.source.onmessage = e => this.validate(
                         e.data,
-                        data => this.message.emit({ data }),
-                        message => this.error.emit({ type: "invalid_data", message }));
+                        data => this._message.emit({ data }),
+                        message => this._error.emit({ type: "invalid_data", message }));
 
                     // TODO: add a handler to the EventSource error to capture errors after connecting/opening?
 
                     this.isConnecting = false;
-                    this.open.emit();
+                    this._open.emit();
                 })
                 .catch((err: Error) => {
                     this.isConnecting = false;
                     if (RequestError.isRequestError(err)) {
                         // TODO: need to test and add better error handling
                         // -- handle when RequestError code is something other than http
-                        this.error.emit({
+                        this._error.emit({
                             type: "http",
                             status: err.response && err.response.status,
                             message: err.message
                         });
                     }
                     else {
-                        this.error.emit({
+                        this._error.emit({
                             type: "stream",
                             message: err.message
                         });
