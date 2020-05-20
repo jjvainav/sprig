@@ -44,14 +44,20 @@ export interface IRequest {
     withHeader(name: string, value: string): IRequest;
 }
 
+/** Defines options for an HTTP request. */
 export interface IRequestOptions {
-	readonly method: "GET" | "PATCH" | "POST" | "PUT" | "DELETE";
-	readonly url: string;
-	readonly data?: any;
+    /** The HTTP verb for the request; if not provided, the default is GET. */
+    readonly method?: "GET" | "PATCH" | "POST" | "PUT" | "DELETE";
+    /** The url for the request. */
+    readonly url: string;
+    /** Data to send as the request body. */
+    readonly data?: any;
+    /** The timeout (in milliseconds) when waiting for a response from the server; the default is 0 (no timeout).*/
     readonly timeout?: number;
+    /** A set of headers for the request. */
     readonly headers?: { readonly [key: string]: string };
     /** 
-     * Defines that expected status codes for a request. If a status is not one of the expected
+     * Defines the expected status codes for a request. If a status is not one of the expected
      * status codes the request promise will be rejected with an http request error. This 
      * can either be an array of expected status codes or a function that returns true for
      * a given status code if it is expected. The default behavior is to resolve 2xx status 
@@ -62,7 +68,9 @@ export interface IRequestOptions {
 
 /** Defines options for connection to an event-stream. Note: the data and timeout options/properties are ignored. */
 export interface IEventStreamOptions extends IRequestOptions {
-    readonly method: "GET";
+    /** The HTTP verb for an event stream must be GET. */
+    readonly method?: "GET";
+    /** Defines the expected status codes when connecting to the event stream endpoint; this only allows 200. */
     readonly expectedStatus?: [200];
 }
 
@@ -164,9 +172,16 @@ function createErrorForResponse(request: IRequest, response: { status: number, d
 }
 
 function createEventSource(options: IRequestOptions): EventSource {
-    // A couple notes about the EventSource polyfill
-    // 1) the error event will contain the http status code whereas the native EventSource does not (this is important)
-    // 2) the polyfill has issues on the browser not showing events in debug: https://github.com/Yaffle/EventSource/issues/79
+    // Some notes about the EventSource and polyfill
+    // 1) with the EventSource polyfill an error event will contain the http status code whereas the native EventSource does not
+    // 2) the native EventSource does not support setting HTTP headers whereas EventSource polyfill does
+    // 3) the polyfill has issues on the browser not showing events in debug: https://github.com/Yaffle/EventSource/issues/79
+    // 4) the polyfill has issues on the browser when the server restarts making multiple connections: https://github.com/EventSource/eventsource/issues/89
+    //      a) consider using the polyfill exclusively after #4 is fixed since the error event includes the http status code
+    if (!options.headers && typeof window !== "undefined" && window.EventSource) {
+        return <EventSource>new window.EventSource(options.url);
+    }
+
     return new EventSource(options.url, { headers: options.headers });
 }
 
@@ -202,7 +217,7 @@ function validateExpectedStatus(status: number): boolean {
 const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) => {
     axios.request({
         url: request.options.url,
-        method: request.options.method,
+        method: request.options.method || "GET",
         headers: request.options.headers,
         data: request.options.data,
         timeout: request.options.timeout || defaultTimeout,
@@ -250,32 +265,55 @@ const eventSourceInvoker: IRequestInvoker = request => new Promise((resolve, rej
     }
 
     const source = createEventSource(request.options);
-    const onopen = source.onopen;
-    const onerror = source.onerror;
-
-    source.onopen = event => {
-        source.onopen = onopen;
-        source.onerror = onerror;
+    const onopen = () => {
+        source.removeEventListener("open", onopen);
+        source.removeEventListener("error", onerror);
 
         resolve({
             request,
             response: {
                 request: request,
-                status: (<any>event).status,
+                status: 200,
                 data: source
             }
         });
     };
-    source.onerror = event => {
-        source.onopen = onopen;
-        source.onerror = onerror;
+    const onerror = (event: Event) => {
+        source.removeEventListener("open", onopen);
+        source.removeEventListener("error", onerror);
 
-        // automatically close the event source to prevent retries
-        source.close();
+        if (source.readyState !== source.CLOSED) {
+            // should not get here but just to be safe
+            source.close();
+        }
 
-        // TODO: what would status and statusText be if no connection?
-        reject(createErrorForResponse(request, { status: (<any>event).status, data: {} }, (<any>event).statusText));
-    }
+        // see notes above about native EventSource not including status code - return a generic 400 if a status code is not available
+        const status: number = (<any>event).status;
+        if (status) {
+            // the EventSource polyfill will include the HTTP status if the request returned a non-200 status code and 
+            // is useful if the connection failed for some reason other than a network issue (e.g. unauthorized, invalid endpoint, etc.)
+            reject(createErrorForResponse(request, { status, data: {} }, (<any>event).statusText));    
+        }
+
+        // the native EventSource does not provide any useful info for a failed connection
+        if (typeof window !== "undefined" && !window.navigator.onLine) {
+            reject({
+                code: RequestErrorCode.networkUnavailable,
+                message: "Network unavailable",
+                request: request
+            });
+        }
+
+        // if we get here assume there was an issue with the client but we aren't able to determine exactly what
+        reject({
+            code: RequestErrorCode.clientError,
+            message: "Failed to connect with the server",
+            request: request
+        });
+    };
+
+    source.addEventListener("error", onerror);
+    source.addEventListener("open", onopen);
 });
 
 export class RequestError extends Error {
@@ -522,6 +560,6 @@ export const client = {
      * Note: response interceptors will only be invoked on the initial connection and not agains received event messages.
      */
     stream(options: IEventStreamOptions): IRequest {
-        return injectRequestId(new RequestInstance(options, eventSourceInvoker));
+        return new RequestInstance(options, eventSourceInvoker);
     }
 };

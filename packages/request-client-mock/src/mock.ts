@@ -67,6 +67,7 @@ mockRequest.mockImplementation(config => {
 
 const mockEventSource = mocked(EventSource);
 mockEventSource.mockImplementation((url, options) => new class implements EventSource {
+    private readonly listeners = new Map<string, EventListener[]>();
     private _readyState = 0;
 
     readonly CLOSED = 2;
@@ -93,15 +94,34 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
     }
 
     addEventListener(type: string, listener: EventListener): void {
-        throw new Error("Not implemented.");
+        const callbacks = this.listeners.get(type) || [];
+        this.listeners.set(type, [...callbacks, listener]);
     }
 
     dispatchEvent(evt: Event): boolean {
-        throw new Error("Not implemented.");
+        const callbacks = this.listeners.get(evt.type);
+            if (callbacks) {
+                callbacks.forEach(callback => callback(evt));
+            }
+
+            return true;
     }
 
     removeEventListener(type: string, listener?: EventListener): void {
-        throw new Error("Not implemented.");
+        if (!listener) {
+            this.listeners.set(type, []);
+        }
+        else {
+            const callbacks = this.listeners.get(type);
+            if (callbacks) {
+                for (let i = 0; i < callbacks.length; i++) {
+                    if (callbacks[i] === listener) {
+                        callbacks.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     close(): void {
@@ -123,26 +143,34 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
 
         setTimeout(() => {
             if (response.status === 200) {
+                const event = new MessageEvent("open");
+                (<any>event).status = response!.status;
+                this._readyState = this.OPEN;
+
+                this.dispatchEvent(event);
                 if (this.onopen !== null) {
-                    const event = new MessageEvent("");
-                    (<any>event).status = response.status;
-                    this._readyState = this.OPEN;
                     this.onopen(event);
                 }
             }
-            else if (this.onerror !== null) {
+            else {
                 const event = new MessageEvent("error");
-                (<any>event).status = response.status;
+                (<any>event).status = response!.status;
                 // TODO: an event source will be closed if an error occurs during connection but what about if an error happens after the connection is already open?
                 this._readyState = this.CLOSED;
-                this.onerror(event);
+
+                this.dispatchEvent(event);
+                if (this.onerror !== null) {
+                    this.onerror(event);
+                }
             }
 
             if (response.status === 200 && response.data) {
                 setTimeout(() => {
+                    const event = new MessageEvent("message", { data: response.data });
+                    (<any>event).status = response.status;
+
+                    this.dispatchEvent(event);
                     if (this.onmessage) {
-                        const event = new MessageEvent("", { data: response.data });
-                        (<any>event).status = response.status;
                         this.onmessage(event); 
                     }
                 }, 

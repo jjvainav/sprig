@@ -1,5 +1,5 @@
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
-import client, { IEventStreamOptions, IRequest, IRequestPromise, RequestError } from "@sprig/request-client";
+import client, { IEventStreamOptions, IRequest, IRequestPromise, RequestError, RequestErrorCode } from "@sprig/request-client";
 import EventSource from "eventsource";
 
 /** Defines a message event received from the event stream. */
@@ -14,7 +14,7 @@ export interface IMessageValidator<TData> {
 
 /** Defines an error for a server-sent event stream. */
 export interface IEventStreamError {
-    readonly type: "http" | "invalid_data" | "stream";
+    readonly type: "connection" | "http" | "invalid_data" | "network_unavailable" | "stream";
     readonly status?: number;
     readonly message: string;
 }
@@ -39,11 +39,17 @@ export interface IEventStreamEmitterOptions<TData> extends IEventStreamOptions {
  * close close when all onMessage listeners are unregistered.
  */
 export interface IRequestEventStream<TData = any> {
+    /** An event that is raised when the event stream has been closed after a connection has been opened. */
     readonly onClose: IEvent;
+    /** An event that is raised when a connection attempt with the event stream has failed. */
     readonly onError: IEvent<IEventStreamError>;
+    /** An event that is raised when a message has been received. */
     readonly onMessage: IEvent<IMessageEvent<TData>>;
+    /** An event that is raised after a connection has been opened. */
     readonly onOpen: IEvent;
+    /** The current connection state for the event stream. */
     readonly readyState: ReadyState;
+    /** Forces a stream to close. */
     close(): void;
 }
 
@@ -170,7 +176,12 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                         data => this._message.emit({ data }),
                         message => this._error.emit({ type: "invalid_data", message }));
 
-                    // TODO: add a handler to the EventSource error to capture errors after connecting/opening?
+                    // note: the onerror event is raised a connection attempt fails:
+                    // https://developer.mozilla.org/en-US/docs/Web/API/EventSource/error_event
+                    // when this happens the request client will reject with a RequestError
+
+                    // also note: once connected the EventSource will remain 'connected' even 
+                    // if the network goes down and the browser will constantly retry to reconnected
 
                     this.isConnecting = false;
                     this._open.emit();
@@ -178,13 +189,19 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                 .catch((err: Error) => {
                     this.isConnecting = false;
                     if (RequestError.isRequestError(err)) {
-                        // TODO: need to test and add better error handling
-                        // -- handle when RequestError code is something other than http
-                        this._error.emit({
-                            type: "http",
-                            status: err.response && err.response.status,
-                            message: err.message
-                        });
+                        if (err.code === RequestErrorCode.httpError) {
+                            this._error.emit({
+                                type: "http",
+                                status: err.response && err.response.status,
+                                message: err.message
+                            });
+                        }
+                        else if (err.code === RequestErrorCode.networkUnavailable) {
+                            this._error.emit({ type: "network_unavailable", message: err.message });
+                        }
+                        else {
+                            this._error.emit({ type: "connection", message: err.message });
+                        }
                     }
                     else {
                         this._error.emit({

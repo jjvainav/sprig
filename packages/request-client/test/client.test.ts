@@ -58,6 +58,8 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
     response = response.status ? response : { ...response, status: 200 };
 
     const fn = mocked(EventSource).mockImplementation((url, options) => new class implements EventSource {
+        private readonly listeners = new Map<string, EventListener[]>();
+
         readonly CLOSED = 2;
         readonly CONNECTING = 0;
         readonly OPEN = 1;
@@ -79,15 +81,34 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
         }
 
         addEventListener(type: string, listener: EventListener): void {
-            throw new Error("Not implemented.");
+            const callbacks = this.listeners.get(type) || [];
+            this.listeners.set(type, [...callbacks, listener]);   
         }
 
         dispatchEvent(evt: Event): boolean {
-            throw new Error("Not implemented.");
+            const callbacks = this.listeners.get(evt.type);
+            if (callbacks) {
+                callbacks.forEach(callback => callback(evt));
+            }
+
+            return true;
         }
 
         removeEventListener(type: string, listener?: EventListener): void {
-            throw new Error("Not implemented.");
+            if (!listener) {
+                this.listeners.set(type, []);
+            }
+            else {
+                const callbacks = this.listeners.get(type);
+                if (callbacks) {
+                    for (let i = 0; i < callbacks.length; i++) {
+                        if (callbacks[i] === listener) {
+                            callbacks.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         close(): void {
@@ -96,16 +117,22 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
 
         private connect(): void {
             if (response!.status === 200) {
+                const event = new MessageEvent("open");
+                (<any>event).status = response!.status;
+
+                this.dispatchEvent(event);
                 if (this.onopen !== null) {
-                    const event = new MessageEvent("");
-                    (<any>event).status = response!.status;
                     this.onopen(event);
                 }
             }
-            else if (this.onerror !== null) {
+            else {
                 const event = new MessageEvent("error");
                 (<any>event).status = response!.status;
-                this.onerror(event);
+
+                this.dispatchEvent(event);
+                if (this.onerror !== null) {
+                    this.onerror(event);
+                }
             }
         }
     });
