@@ -260,10 +260,6 @@ const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) =
 });
 
 const eventSourceInvoker: IRequestInvoker = request => new Promise((resolve, reject) => {
-    if (request.options.method !== "GET") {
-        return reject(new Error("method must be GET"));
-    }
-
     const source = createEventSource(request.options);
     const onopen = () => {
         source.removeEventListener("open", onopen);

@@ -45,17 +45,19 @@ describe("request event stream", () => {
             data: { foo: "bar" }
         });
 
-        const stream = new RequestEventStream({
-            method: "GET",
-            url: "http://localhost"
-        });
-
-        stream.onOpen(() => expect(stream.readyState).toBe(ReadyState.open));
+        const stream = new RequestEventStream({ url: "http://localhost" });
 
         expect(stream.readyState).toBe(ReadyState.closed);
         stream.onMessage(() => {
             expect(stream.readyState).toBe(ReadyState.open);
+            expect(onOpenRaised).toBe(true);
             done();
+        });
+
+        let onOpenRaised = false;
+        stream.onOpen(() => {
+            onOpenRaised = true;
+            expect(stream.readyState).toBe(ReadyState.open);
         });
     });
 
