@@ -59,7 +59,8 @@ export enum ReadyState {
     closed = 2 
 }
 
-const jsonValidator: IMessageValidator<any> = (data, resolve, reject) => {
+/** Default validator that validates and converts a JSON string to a JSON object. */
+export const jsonValidator: IMessageValidator<any> = (data, resolve, reject) => {
     if (typeof data === "object") {
         return resolve(data);
     }
