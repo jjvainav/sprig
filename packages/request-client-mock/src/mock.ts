@@ -74,6 +74,7 @@ mockRequest.mockImplementation(config => {
 const mockEventSource = mocked(EventSource);
 mockEventSource.mockImplementation((url, options) => new class implements EventSource {
     private readonly listeners = new Map<string, EventListener[]>();
+    private readonly pending: any[] = [];
     private _readyState = 0;
 
     readonly CLOSED = 2;
@@ -141,9 +142,17 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
     }
 
     sendMessage(data: any): void {
-        const event = new MessageEvent("message", { data });
-        (<any>event).status = 200;
-        this.dispatchEvent(event);
+        setTimeout(() => {
+            if (this._readyState !== this.OPEN) {
+                this.pending.push(data);
+                return;
+            }
+
+            const event = new MessageEvent("message", { data });
+            (<any>event).status = 200;
+            this.dispatchEvent(event); 
+        },
+        0);
     }
 
     private connect(): void {
@@ -165,6 +174,13 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
                 (<any>event).status = response!.status;
                 this._readyState = this.OPEN;
                 this.dispatchEvent(event);
+
+                if (response.data) {
+                    this.sendMessage(response.data);
+                }   
+                
+                this.pending.forEach(data => this.sendMessage(data));
+                this.pending.splice(0);
             }
             else {
                 const event = new MessageEvent("error");
@@ -172,10 +188,6 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
                 // TODO: an event source will be closed if an error occurs during connection but what about if an error happens after the connection is already open?
                 this._readyState = this.CLOSED;
                 this.dispatchEvent(event);
-            }
-
-            if (response.status === 200 && response.data) {
-                setTimeout(() => this.sendMessage(response.data), 0);
             }
         },
         0);

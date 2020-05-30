@@ -24,6 +24,29 @@ describe("request event stream", () => {
         });
     });
 
+    test("on multiple messages received", async done => {
+        const context = mockResponse({ 
+            status: 200,
+            data: { foo: "bar" }
+        });
+
+        const stream = new RequestEventStream({
+            method: "GET",
+            url: "http://localhost"
+        });
+
+        let count = 0;
+        stream.onMessage(e => {
+            count++;
+            if (count === 3) {
+                done();
+            }
+        });
+
+        context.sendEventSourceMessage({ foo: "bar" });
+        context.sendEventSourceMessage({ foo: "bar" });
+    });
+
     test("with custom validator", async done => {
         mockResponse({ status: 200, data: "100" });
 

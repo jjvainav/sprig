@@ -349,12 +349,13 @@ describe("client stream mock", () => {
         const source = <EventSource>result.data;
         source.onmessage = e => {
             count++;
-            if (count === 2) {
+            if (count === 3) {
                 done();
             }
         };
 
         // this needs to be sent after the onmessage has been attached
+        context.sendEventSourceMessage({ foo: "bar" });
         context.sendEventSourceMessage({ foo: "bar" });
     });
 });
