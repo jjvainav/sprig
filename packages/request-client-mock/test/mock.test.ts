@@ -331,5 +331,30 @@ describe("client stream mock", () => {
         expect(error!.code).toBe(RequestErrorCode.httpError);
         expect(error!.response).toBeDefined();
         expect(error!.response!.status).toBe(406);
-    }); 
+    });
+    
+    test("send multiple messages", async done => {
+        const context = mockResponse({ 
+            status: 200,
+            data: { foo: "bar" }
+        });
+
+        const result = await client.stream({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .invoke();
+
+        let count = 0;
+        const source = <EventSource>result.data;
+        source.onmessage = e => {
+            count++;
+            if (count === 2) {
+                done();
+            }
+        };
+
+        // this needs to be sent after the onmessage has been attached
+        context.sendEventSourceMessage({ foo: "bar" });
+    });
 });

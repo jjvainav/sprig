@@ -29,6 +29,12 @@ export interface IMockRequestContext {
     readonly mockRequest: jest.MockContext<AxiosPromise, [AxiosRequestConfig]>;
     /** A list of requests. */
     readonly requests: IRequestOptions[];
+    /** Sends a message to all mock event source implementations. */
+    sendEventSourceMessage(data: any): void;
+}
+
+interface IMockEventSource extends EventSource {
+    sendMessage(data: any): void;
 }
 
 const requests = new Map<string, IRequestOptions>();
@@ -86,6 +92,7 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
         (<any>this).onmessage = null;
         (<any>this).onerror = null;
 
+        eventSourceInstances.push(this);
         setTimeout(() => this.connect(), 0);
     }
 
@@ -99,12 +106,17 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
     }
 
     dispatchEvent(evt: Event): boolean {
-        const callbacks = this.listeners.get(evt.type);
-            if (callbacks) {
-                callbacks.forEach(callback => callback(evt));
-            }
+        const callback = (<any>this)["on" + evt.type];
+        if (callback !== null) {
+            callback(evt);
+        }
 
-            return true;
+        const callbacks = this.listeners.get(evt.type);
+        if (callbacks) {
+            callbacks.forEach(callback => callback(evt));
+        }
+
+        return true;
     }
 
     removeEventListener(type: string, listener?: EventListener): void {
@@ -128,6 +140,12 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
         this._readyState = this.CLOSED;
     }
 
+    sendMessage(data: any): void {
+        const event = new MessageEvent("message", { data });
+        (<any>event).status = 200;
+        this.dispatchEvent(event);
+    }
+
     private connect(): void {
         const url = this.url || "/";
         const currentRequest = requests.get(url);
@@ -146,41 +164,25 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
                 const event = new MessageEvent("open");
                 (<any>event).status = response!.status;
                 this._readyState = this.OPEN;
-
                 this.dispatchEvent(event);
-                if (this.onopen !== null) {
-                    this.onopen(event);
-                }
             }
             else {
                 const event = new MessageEvent("error");
                 (<any>event).status = response!.status;
                 // TODO: an event source will be closed if an error occurs during connection but what about if an error happens after the connection is already open?
                 this._readyState = this.CLOSED;
-
                 this.dispatchEvent(event);
-                if (this.onerror !== null) {
-                    this.onerror(event);
-                }
             }
 
             if (response.status === 200 && response.data) {
-                setTimeout(() => {
-                    const event = new MessageEvent("message", { data: response.data });
-                    (<any>event).status = response.status;
-
-                    this.dispatchEvent(event);
-                    if (this.onmessage) {
-                        this.onmessage(event); 
-                    }
-                }, 
-                0);
+                setTimeout(() => this.sendMessage(response.data), 0);
             }
         },
         0);
     }
 });
 
+const eventSourceInstances: IMockEventSource[] = [];
 const invokedRequests: IRequestOptions[] = [];
 const mockContext: IMockRequestContext = {
     get mockEventSource(): jest.MockContext<EventSource, [string, (EventSourceInitDict | undefined)?]> { 
@@ -191,6 +193,9 @@ const mockContext: IMockRequestContext = {
     },
     get requests(): IRequestOptions[] {
         return invokedRequests;
+    },
+    sendEventSourceMessage(data: any): void {
+        eventSourceInstances.forEach(eventSource => eventSource.sendMessage(data));
     }
 };
 
@@ -210,6 +215,7 @@ client.stream = options => {
 export function mockClear(): void {
     mockEventSource.mockClear();
     mockRequest.mockClear();
+    eventSourceInstances.splice(0);
     invokedRequests.splice(0);
     requests.clear();
     responses.clear();
