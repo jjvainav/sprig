@@ -62,6 +62,23 @@ describe("request event stream", () => {
         });
     });
 
+    test("with invalid data received", async done => {
+        mockResponse({ status: 200, data: "foo" });
+
+        const stream = new RequestEventStream<number>({
+            method: "GET",
+            url: "http://localhost",
+            validate: (data, _, reject) => reject("Data is not a number.")
+        });
+
+        let onMessageRaised = false;
+        stream.onMessage(e => onMessageRaised = true);
+        stream.onInvalidData(() => {
+            expect(onMessageRaised).toBe(false);
+            done();
+        });
+    });
+
     test("verify lazy connect", async done => {
         mockResponse({ 
             status: 200,

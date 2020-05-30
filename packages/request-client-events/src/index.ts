@@ -2,6 +2,12 @@ import { EventEmitter, IEvent } from "@sprig/event-emitter";
 import client, { IEventStreamOptions, IRequest, IRequestPromise, RequestError, RequestErrorCode } from "@sprig/request-client";
 import EventSource from "eventsource";
 
+/** Defines the event data for an invalid message received. */
+export interface IInvalidDataEvent {
+    readonly data: any;
+    readonly message: string;
+}
+
 /** Defines a message event received from the event stream. */
 export interface IMessageEvent<TData> {
     readonly data: TData;
@@ -12,9 +18,9 @@ export interface IMessageValidator<TData> {
     (data: string, resolve: (data: TData) => void, reject: (message: string) => void): void;
 }
 
-/** Defines an error for a server-sent event stream. */
+/** Defines an error when a connection to a server-sent event stream endpoint fails. */
 export interface IEventStreamError {
-    readonly type: "connection" | "http" | "invalid_data" | "network_unavailable" | "stream";
+    readonly type: "connection" | "http" | "network_unavailable" | "stream";
     readonly status?: number;
     readonly message: string;
 }
@@ -43,6 +49,8 @@ export interface IRequestEventStream<TData = any> {
     readonly onClose: IEvent;
     /** An event that is raised when a connection attempt with the event stream has failed. */
     readonly onError: IEvent<IEventStreamError>;
+    /** An event that is raised when invalid data was recieved. */
+    readonly onInvalidData: IEvent<IInvalidDataEvent>;
     /** An event that is raised when a message has been received. */
     readonly onMessage: IEvent<IMessageEvent<TData>>;
     /** An event that is raised after a connection has been opened. */
@@ -86,6 +94,7 @@ function isEventSource(data: any): data is EventSource {
 export class RequestEventStream<TData = any> implements IRequestEventStream<TData> {
     private readonly _close = new EventEmitter("sse-close");
     private readonly _error = new EventEmitter<IEventStreamError>("sse-error");
+    private readonly _invalidData = new EventEmitter<IInvalidDataEvent>("sse-invalid-data");
     private readonly _open = new EventEmitter("sse-open");
 
     private readonly _message: EventEmitter<IMessageEvent<TData>>;
@@ -129,6 +138,10 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
 
     get onError(): IEvent<IEventStreamError> {
         return this._error.event;
+    }
+
+    get onInvalidData(): IEvent<IInvalidDataEvent> {
+        return this._invalidData.event;
     }
 
     get onMessage(): IEvent<IMessageEvent<TData>> {
@@ -175,7 +188,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                     this.source.onmessage = e => this.validate(
                         e.data,
                         data => this._message.emit({ data }),
-                        message => this._error.emit({ type: "invalid_data", message }));
+                        message => this._invalidData.emit({ data: e.data, message }));
 
                     // note: the onerror event is raised a connection attempt fails:
                     // https://developer.mozilla.org/en-US/docs/Web/API/EventSource/error_event
