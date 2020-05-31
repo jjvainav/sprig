@@ -47,6 +47,24 @@ describe("request event stream", () => {
         context.sendEventSourceMessage({ foo: "bar" });
     });
 
+    test("on connection with server failed", async done => {
+        // note: an EventSource does not provide access to the failed response body
+        mockResponse({ status: 400 });
+
+        const stream = new RequestEventStream({
+            method: "GET",
+            url: "http://localhost"
+        });
+
+        stream.connect();
+        stream.onError(e => {
+            expect(e.type).toBe("http");
+            expect(e.response).toBeDefined();
+            expect(e.response!.status).toBe(400);
+            done();
+        });
+    });
+
     test("with custom validator", async done => {
         mockResponse({ status: 200, data: "100" });
 

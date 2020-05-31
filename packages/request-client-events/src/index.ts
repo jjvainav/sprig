@@ -32,6 +32,10 @@ export interface IEventStreamHttpError extends IEventStreamError {
 
 /** Options for the server-sent event emitters. */
 export interface IEventStreamEmitterOptions<TData> extends IEventStreamOptions {
+    /** If true, the event stream will automatically be closed when all message handlers have been unregistered; the default is true. */
+    readonly autoClose?: boolean;
+    /** If true, the event stream will automatically connected when a message handler has been registered; the default is true. */
+    readonly autoConnect?: boolean;
     /** Allows preparing a request by adding request interceptors. */
     readonly beforeRequest?: (request: IRequest) => IRequest;
     /** Allows handling the request promise for adding response interceptors. */
@@ -59,6 +63,8 @@ export interface IRequestEventStream<TData = any> {
     readonly readyState: ReadyState;
     /** Forces a stream to close. */
     close(): void;
+    /** Manually connects the event stream. */
+    connect(): Promise<void>;
 }
 
 export enum ReadyState { 
@@ -103,7 +109,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
 
     private isConnecting = false;
 
-    constructor(options: IEventStreamEmitterOptions<TData>) {
+    constructor(private readonly options: IEventStreamEmitterOptions<TData>) {
         const self = this;
 
         this.validate = options.validate || jsonValidator;
@@ -113,9 +119,9 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
             }
 
             protected callbackRegistered(): void {
-                if (!self.source) {
+                if (self.shouldAutoConnect() && !self.source) {
                     // after connecting verify that the listener is still registered; auto-close if not
-                    self.connect(options).then(() => this.autoClose());
+                    self.connect().then(() => this.autoClose());
                 }
             }
 
@@ -125,7 +131,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
 
             private autoClose(): void {
                 // automatically close if there are no listeners registered
-                if (!this.count) {
+                if (self.shouldAutoClose() && !this.count) {
                     self.close();
                 }
             }
@@ -168,15 +174,15 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
         }
     }
 
-    private connect(options: IEventStreamEmitterOptions<TData>): Promise<void> {
+    connect(): Promise<void> {
         if (!this.source && !this.isConnecting) {
             this.isConnecting = true;
 
-            let request = client.stream(options);
-            request = options.beforeRequest ? options.beforeRequest(request) : request;
+            let request = client.stream(this.options);
+            request = this.options.beforeRequest ? this.options.beforeRequest(request) : request;
 
             let promise = request.invoke();
-            promise = options.afterRequest ? options.afterRequest(promise) : promise;
+            promise = this.options.afterRequest ? this.options.afterRequest(promise) : promise;
 
             return promise
                 .then(response => {
@@ -227,5 +233,13 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
         }
 
         return Promise.resolve();
+    }
+
+    private shouldAutoClose(): boolean {
+        return this.options.autoClose !== undefined ? this.options.autoClose : true;
+    }
+
+    private shouldAutoConnect(): boolean {
+        return this.options.autoConnect !== undefined ? this.options.autoConnect : true;
     }
 }
