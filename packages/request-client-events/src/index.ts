@@ -1,5 +1,5 @@
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
-import client, { IEventStreamOptions, IRequest, IRequestPromise, RequestError, RequestErrorCode } from "@sprig/request-client";
+import client, { IEventStreamOptions, IRequest, IRequestPromise, IResponse, RequestError, RequestErrorCode } from "@sprig/request-client";
 import EventSource from "eventsource";
 
 /** Defines the event data for an invalid message received. */
@@ -21,13 +21,13 @@ export interface IMessageValidator<TData> {
 /** Defines an error when a connection to a server-sent event stream endpoint fails. */
 export interface IEventStreamError {
     readonly type: "connection" | "http" | "network_unavailable" | "stream";
-    readonly status?: number;
+    readonly response?: IResponse;
     readonly message: string;
 }
 
 export interface IEventStreamHttpError extends IEventStreamError {
     readonly type: "http";
-    readonly status: number;
+    readonly response: IResponse;
 }
 
 /** Options for the server-sent event emitters. */
@@ -206,7 +206,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                         if (err.code === RequestErrorCode.httpError) {
                             this._error.emit({
                                 type: "http",
-                                status: err.response && err.response.status,
+                                response: err.response,
                                 message: err.message
                             });
                         }
