@@ -1,6 +1,6 @@
 {
     "name": "@sprig/async-queue",
-    "version": "0.1.48",
+    "version": "0.1.49",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -20,6 +20,6 @@
         "test": "jest --silent"
     },
     "dependencies": {
-        "@sprig/edit-operation": "0.1.48"
+        "@sprig/edit-operation": "0.1.49"
     }
 }
