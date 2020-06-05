@@ -176,7 +176,7 @@ function createEventSource(options: IRequestOptions): EventSource {
     // 1) with the EventSource polyfill an error event will contain the http status code whereas the native EventSource does not
     // 2) the native EventSource does not support setting HTTP headers whereas EventSource polyfill does
     // 3) the polyfill has issues on the browser not showing events in debug: https://github.com/Yaffle/EventSource/issues/79
-    // 4) the polyfill has issues on the browser when the server restarts making multiple connections: https://github.com/EventSource/eventsource/issues/89
+    // 4) the polyfill has issues on the browser (and node) when the server restarts the polyfill will make multiple connections: https://github.com/EventSource/eventsource/issues/89
     //      a) consider using the polyfill exclusively after #4 is fixed since the error event includes the http status code
     if (!options.headers && typeof window !== "undefined" && window.EventSource) {
         return <EventSource>new window.EventSource(options.url);

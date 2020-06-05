@@ -6,8 +6,18 @@ var base62 = baseX("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX
 
 /** Creates a base62 encoded uuid with an optional length. */
 module.exports = function createId(len) {
-    var id = uuid().replace(/-/g, "");
-    var buffer = Buffer.alloc(22, id, "hex");
-    var result = base62.encode(buffer);
-    return len ? result.substr(0, len) : result;
+    var buffer = Buffer.alloc(16);
+    uuid(null, buffer, 0);
+
+    var id = base62.encode(buffer);
+    len = len || 22;
+
+    if (id.length < len) {
+        id = id.padStart(len, "0");
+    }
+    else if (id.length > len) {
+        id = id.slice(id.length - len);
+    }
+
+    return id;
 };
