@@ -295,7 +295,7 @@ const eventSourceInvoker: IRequestInvoker = request => new Promise((resolve, rej
         if (typeof window !== "undefined" && !window.navigator.onLine) {
             reject({
                 code: RequestErrorCode.networkUnavailable,
-                message: "Network unavailable",
+                message: "Network unavailable.",
                 request: request
             });
         }
@@ -303,7 +303,7 @@ const eventSourceInvoker: IRequestInvoker = request => new Promise((resolve, rej
         // if we get here assume there was an issue with the client but we aren't able to determine exactly what
         reject({
             code: RequestErrorCode.clientError,
-            message: "Failed to connect with the server",
+            message: "Failed to connect to server.",
             request: request
         });
     };
