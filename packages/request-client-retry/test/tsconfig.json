@@ -1,13 +1,14 @@
 {
     "extends": "../../tsconfig.base.json",
     "compilerOptions": {
-        "allowJs": true,
+        "allowJs": false,
         "composite": false,
         "declaration": false,
         "declarationMap": false,
         "outDir": "dist",
         "strictPropertyInitialization": true,
-        "types": ["jest"]
+        "types": ["jest"],
+        "lib": ["DOM", "ESNext"]
     },
     "include": [".", "../src"]
   }
