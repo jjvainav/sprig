@@ -12,7 +12,7 @@
         ],
         "lib": [
             "dom",
-            "ES2019"
+            "ESNext"
         ]
     },
     "include": [

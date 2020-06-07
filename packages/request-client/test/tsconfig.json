@@ -8,7 +8,7 @@
         "outDir": "dist",
         "strictPropertyInitialization": true,
         "types": ["jest", "node"],
-        "lib": ["dom", "ES2019"]
+        "lib": ["dom", "ESNext"]
     },
     "include": [".", "../src"]
   }
