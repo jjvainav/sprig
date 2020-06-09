@@ -1,5 +1,6 @@
+import { IEditOperation } from "@sprig/edit-operation";
 import { Collection, ICollection } from "@sprig/immutable-collection";
-import { applySplitter, createMappedHandler, createScopedHandler, defineScope, IEditHandler, IEditOperation } from "../src";
+import { applySplitter, createMappedHandler, createScopedHandler, defineScope, IEditHandler } from "../src";
 
 // A set of tests against a normalized data structure (e.g. flattened)
 // These were created because normalized data structures require a different strategy when editing

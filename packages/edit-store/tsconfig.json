@@ -6,7 +6,7 @@
     },
     "include": ["src"],
     "references": [
-        { "path": "../edit-operation" },
+        { "path": "../immutable-collection" },
         { "path": "../store" }
     ]
 }

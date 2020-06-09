@@ -6,7 +6,6 @@
     },
     "include": ["src"],
     "references": [
-        { "path": "../async-queue" },
-        { "path": "../edit-operation" }
+        { "path": "../async-queue" }
     ]
   }

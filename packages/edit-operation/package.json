@@ -1,26 +1,15 @@
 {
     "name": "@sprig/edit-operation",
-    "description": "Defines an abstraction and core functions for edit operations against an object model.",
+    "description": "Defines the edit operation interface.",
     "version": "0.1.49",
     "license": "MIT",
     "repository": {
         "type": "git",
         "url": "https://github.com/jjvainav/sprig.git"
     },
-    "main": "dist/index.js",
-    "typings": "dist/index.d.ts",
-    "files": [
-        "dist"
-    ],
+    "main": "",
+    "typings": "index.d.ts",
     "publishConfig": {
         "access": "public"
-    },
-    "scripts": {
-        "build": "tsc",
-        "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
-        "test": "jest"
-    },
-    "dependencies": {
-        "@sprig/immutable-collection": "0.1.49"
     }
 }

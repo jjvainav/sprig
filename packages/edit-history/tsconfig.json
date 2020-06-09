@@ -6,7 +6,6 @@
     },
     "include": ["src"],
     "references": [
-        { "path": "../edit-operation" },
         { "path": "../edit-queue" },
         { "path": "../event-emitter" }
     ]

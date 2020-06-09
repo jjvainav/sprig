@@ -21,6 +21,7 @@
     },
     "dependencies": {
         "@sprig/edit-operation": "0.1.49",
+        "@sprig/immutable-collection": "0.1.49",
         "@sprig/store": "0.1.49"
     }
 }
