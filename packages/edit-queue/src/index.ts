@@ -42,7 +42,7 @@ export interface IEditChannelExtension {
 
 /** Options for creating an edit channel. */
 export interface IEditChannelOptions {
-    /** True if the channel should be private; the default is false. */
+    /** True if the channel should be private and edits dispatched against the channel will not be broadcast via the queue's edit dispatched event; the default is false. */
     readonly isPrivate?: boolean;
     /** An extension for the edit channel. */
     readonly extend?: IEditChannelExtension;
