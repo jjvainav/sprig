@@ -1,6 +1,6 @@
 {
     "name": "@sprig/edit-history",
-    "version": "0.1.50",
+    "version": "0.1.51",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -20,8 +20,8 @@
         "test": "jest --runInBand"
     },
     "dependencies": {
-        "@sprig/edit-operation": "0.1.50",
-        "@sprig/edit-queue": "0.1.50",
-        "@sprig/event-emitter": "0.1.50"
+        "@sprig/edit-operation": "0.1.51",
+        "@sprig/edit-queue": "0.1.51",
+        "@sprig/event-emitter": "0.1.51"
     }
 }
