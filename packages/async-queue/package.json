@@ -18,5 +18,8 @@
         "build": "tsc -b .",
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
         "test": "jest --silent"
+    },
+    "dependencies": {
+        "@sprig/event-emitter": "0.1.50"
     }
 }
