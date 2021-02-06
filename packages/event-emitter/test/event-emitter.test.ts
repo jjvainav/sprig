@@ -186,11 +186,12 @@ describe("event emmitter", () => {
 
         let count = 0;
         foo.onAChanged.once(() => count++);
+        foo.onAChanged.once(() => count++);
 
         foo.a = "a";
         foo.a = "b";
 
-        expect(count).toBe(1);
+        expect(count).toBe(2);
     });
 
     test("once removed before raised", () => {
@@ -253,7 +254,43 @@ describe("event emmitter", () => {
         expect(results[0]).toBe("a");
     });
 
-    test("unregister event before emit", () => {
+    test("remove event handler", () => {
+        const foo = new Foo();
+
+        let count = 0;
+        const event1 = foo.onAChanged(() => count++);
+        const event2 = foo.onAChanged(() => count++);
+
+        event1.remove();
+        foo.a = "a";
+
+        event2.remove();
+        foo.a = "b";
+
+        expect(count).toBe(1);
+    });
+
+    test("remove event handler from inside callback", () => {
+        const foo = new Foo();
+
+        let count = 0;
+        const event1 = foo.onAChanged(() => {
+            count++;
+            event1.remove();
+        });
+
+        const event2 = foo.onAChanged(() => {
+            count++;
+            event2.remove();
+        });
+
+        foo.a = "a";
+        foo.a = "b";
+
+        expect(count).toBe(2);
+    });
+
+    test("remove event before emit", () => {
         const foo = new Foo();
 
         let count = 0;

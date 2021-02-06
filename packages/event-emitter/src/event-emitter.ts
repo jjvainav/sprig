@@ -192,7 +192,7 @@ export class EventEmitter<TArgs = void> {
     async emit(args: TArgs): Promise<void> {
         if (this.callbacks !== undefined) {
             const promises: Promise<void>[] = [];
-            this.callbacks.forEach(callback => {
+            [...this.callbacks].forEach(callback => {
                 const promise = callback(args);
                 if (isPromise(promise)) {
                     promises.push(promise);
