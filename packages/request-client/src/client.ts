@@ -33,6 +33,11 @@ export type RequestErrorArgs = {
     readonly data?: any;
 };
 
+export interface IRequestClient {
+    readonly request: IRequestBuilder;
+    readonly stream: IEventStreamBuilder;
+}
+
 export interface IRequest {
     readonly id: string;
     readonly options: IRequestOptions;
@@ -42,6 +47,16 @@ export interface IRequest {
     
     /** A helper function that will append a header to the request. */
     withHeader(name: string, value: string): IRequest;
+    /** 
+     * A helper function to add an interceptor that will be called immediately after invoke. 
+     * Note: response interceptors used against the request promise will be invoked after interceptors added using this function.
+     */
+    withResponseInterceptor(interceptor: IResponseInterceptor): IRequest;
+}
+
+/** Defines a callback that accepts request options and builds a request. */
+export interface IRequestBuilder {
+    (options: IRequestOptions): IRequest;
 }
 
 /** Defines options for an HTTP request. */
@@ -64,6 +79,11 @@ export interface IRequestOptions {
      * codes and reject all others.
      */
     readonly expectedStatus?: number[] | ((status: number) => boolean);
+}
+
+/** Defines a callback that accepts event stream options and builds a request. */
+export interface IEventStreamBuilder {
+    (options: IEventStreamOptions): IRequest;
 }
 
 /** Defines options for connection to an event-stream. Note: the data and timeout options/properties are ignored. */
@@ -121,7 +141,7 @@ export interface IRequestPromise extends Promise<IResponse> {
     /** 
      * Invokes a response interceptor against a response. Response interceptors are a way to handle a response
      * with added support not provided with the native Promise. For example, an interceptor can break a 
-     * 'thenUse' call chain whereas the only to break a 'then' call chain for a Promise is to throw.
+     * 'thenUse' call chain whereas the only way to break a 'then' call chain for a Promise is to throw.
      * Once the interceptor call chain ends the native 'then' and 'catch' functions will get invoked.
      */
     thenUse(interceptor: IResponseInterceptor): IRequestPromise;
@@ -372,6 +392,10 @@ class RequestInstance implements IRequest {
         return new RequestInstance(options, this.invoker, this.requestInterceptors, this.responseInterceptors);      
     }
 
+    withResponseInterceptor(interceptor: IResponseInterceptor): IRequest {
+        return new RequestInstance(this.options, this.invoker, this.requestInterceptors, [...this.responseInterceptors, interceptor]);
+    }
+
     private static invokeRequest(request: IRequest, invoker: IRequestInvoker, requestInterceptors: IRequestInterceptor[], responseInterceptors: IResponseInterceptor[]): IRequestPromise {
         const promise = requestInterceptors.length > 0
             ? RequestInstance.invokeRequestInterceptors(request, invoker, requestInterceptors)
@@ -545,7 +569,7 @@ class RequestInstance implements IRequest {
     }
 }
 
-export const client = {
+export const client: IRequestClient = {
     /** Invokes an HTTP request. */
     request(options: IRequestOptions): IRequest {
         // TODO: need to check if a network connection is available

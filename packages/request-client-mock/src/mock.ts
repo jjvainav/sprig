@@ -8,7 +8,9 @@ import EventSource, { EventSourceInitDict } from "eventsource";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
 import * as url from "url";
-import client, { IRequestOptions } from "@sprig/request-client";
+import client, { IEventStreamOptions, IRequestClient, IRequestOptions } from "@sprig/request-client";
+
+type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
 export interface IMockResponse {
     data?: any;
@@ -212,13 +214,13 @@ const mockContext: IMockRequestContext = {
 };
 
 const __request = client.request;
-client.request = options => {
+(<Mutable<IRequestClient>>client).request = (options: IRequestOptions) => {
     requests.set(options.url || "/", options);
     return __request(options);
 };
 
 const __stream = client.stream;
-client.stream = options => {
+(<Mutable<IRequestClient>>client).stream = (options: IEventStreamOptions) => {
     requests.set(options.url || "/", options);
     return __stream(options);
 };

@@ -1,4 +1,7 @@
-import { IRequestInterceptor, IRequestInterceptorContext, IResponseInterceptor, IResponseInterceptorContext, RequestError, RequestErrorCode } from "@sprig/request-client";
+import { 
+    IRequest, IRequestInterceptor, IRequestInterceptorContext, IResponseInterceptor, 
+    IResponseInterceptorContext, RequestError, RequestErrorCode 
+} from "@sprig/request-client";
 
 export enum CircuitBreakerState {
     closed = "closed",
@@ -318,6 +321,10 @@ function create(options: NotOptional<ICircuitBreakerOptions>): ICircuitBreaker {
     return <ICircuitBreaker>circuitBreaker;
 }
 
+function isCircuitBreaker(circuitBreakerOrOptions: ICircuitBreaker | ICircuitBreakerOptions): circuitBreakerOrOptions is ICircuitBreaker {
+    return (<ICircuitBreaker>circuitBreakerOrOptions).state !== undefined;
+}
+
 /** 
  * Creates a new circuit breaker. A circuit breaker needs to be hooked into both of the request and
  * response interceptor pipeline for a request. The circuit breaker itself is a request interceptor
@@ -342,6 +349,18 @@ export function createCircuitBreaker(options: ICircuitBreakerOptions): ICircuitB
         bufferSizeHalfOpen: options.bufferSizeHalfOpen || defaultBufferSizeHalfOpen,
         recordError: options.recordError || defaultRecordError
     });
+}
+
+/** Injects the use of a circuit breaker and it's metrics for the given request; this is a helper function that avoids the need to manually use both circuit breaker and its metrics. */
+export function useCircuitBreaker(request: IRequest, circuitBreaker: ICircuitBreaker): IRequest;
+/** Injects the use of a circuit breaker and it's metrics for the given request; this is a helper function that avoids the need to manually use both circuit breaker and its metrics. */
+export function useCircuitBreaker(request: IRequest, options: ICircuitBreakerOptions): IRequest;
+export function useCircuitBreaker(request: IRequest, circuitBreakerOrOptions: ICircuitBreaker | ICircuitBreakerOptions): IRequest {
+    const circuitBreaker = isCircuitBreaker(circuitBreakerOrOptions)
+        ? circuitBreakerOrOptions
+        : createCircuitBreaker(circuitBreakerOrOptions);
+
+    return request.use(circuitBreaker).withResponseInterceptor(circuitBreaker.metrics);
 }
 
 /** Creates and registers a global circuit breaker instance. */

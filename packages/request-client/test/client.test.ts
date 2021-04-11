@@ -461,6 +461,23 @@ describe("request", () => {
         expect(value).toBe("hello");
     });
 
+    test("with response interceptor added to request", async () => {
+        mockAxiosResponse({ status: 200 });
+        
+        let value = "";
+        const request = client.request({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .withResponseInterceptor(() => value += "hello");
+
+        await request.invoke();
+        await request.invoke();
+
+        // make sure the interceptor is invoked each time
+        expect(value).toBe("hellohello");
+    });
+
     test("with multiple response interceptors", async () => {
         mockAxiosResponse({ status: 200 });
         
@@ -472,6 +489,22 @@ describe("request", () => {
         .invoke()
         .thenUse(() => value = value + "a")
         .thenUse(() => value = value + "b")
+        .thenUse(() => value = value + "c");
+
+        expect(value).toBe("abc");
+    });
+
+    test("with multiple response interceptors including an interceptor added to the request", async () => {
+        mockAxiosResponse({ status: 200 });
+        
+        let value = "";
+        await client.request({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .withResponseInterceptor(() => value = value + "a")
+        .withResponseInterceptor(() => value = value + "b")
+        .invoke()
         .thenUse(() => value = value + "c");
 
         expect(value).toBe("abc");
@@ -498,6 +531,34 @@ describe("request", () => {
                 data: value
             }
         }))
+        .thenUse(() => value = value + "c")
+        .then(response => final = response.data);
+
+        expect(value).toBe("ab");
+        expect(final).toBe("ab");
+    });
+
+    test("with response interceptor added to the request and breaks the interceptor chain", async () => {
+        mockAxiosResponse({ status: 200 });
+        
+        let value = "";
+        let final = "";
+
+        await client.request({
+            method: "GET",
+            url: "http://localhost"
+        })
+        .withResponseInterceptor(() => value = value + "a")
+        .withResponseInterceptor(() => value = value + "b")
+        // calling end skips the rest of the response interceptors
+        .withResponseInterceptor(context => context.end({
+            ...context,
+            response: {
+                ...context.response!,
+                data: value
+            }
+        }))
+        .invoke()
         .thenUse(() => value = value + "c")
         .then(response => final = response.data);
 
@@ -638,7 +699,44 @@ describe("request", () => {
             });
 
         expect(result).toBe("abac");
-    });    
+    });
+    
+    test("invoke request from response interceptor added to the request", async () => {
+        mockAxiosResponse({ status: 200 });
+
+        const request = client.request({
+            method: "GET",
+            url: "http://localhost"
+        });
+
+        let flag = false;
+        let result = "";
+
+        await request
+            .withResponseInterceptor(context => {
+                result += "a";
+                context.next();
+            })
+            .withResponseInterceptor(async context => {
+                if (!flag) {
+                    flag = true;
+                    result += "b";
+                    // invoking the request again should retain the response interceptors 
+                    await context.request.invoke();
+                    context.next();
+                }
+                else {
+                    context.end();
+                }
+            })
+            .withResponseInterceptor(context => {
+                result += "c";
+                context.next();
+            })
+            .invoke();
+
+        expect(result).toBe("abac");
+    });
 });
 
 describe("stream", () => {

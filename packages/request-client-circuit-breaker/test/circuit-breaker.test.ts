@@ -2,7 +2,7 @@
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
 import client, { RequestErrorCode } from "@sprig/request-client";
 import { retry } from "@sprig/request-client-retry";
-import { CircuitBreakerState, createCircuitBreaker } from "../src"
+import { CircuitBreakerState, createCircuitBreaker, useCircuitBreaker } from "../src"
 
 describe("request circuit breaker", () => { 
     beforeEach(() => {
@@ -49,7 +49,47 @@ describe("request circuit breaker", () => {
                 }
             }
         }
-    });  
+    }); 
+    
+    test("with circuit breaker added using the helper function and trips open", async () => {
+        const circuitBreaker = createCircuitBreaker({
+            name: "test",
+            openDuration: 500,
+            bufferSizeClosed: 2,
+            bufferSizeHalfOpen: 2
+        });
+
+        mockResponse({ status: 408 });
+
+        const request = useCircuitBreaker(
+            client.request({ method: "GET", url: "http://localhost" }),
+            circuitBreaker);
+
+        // trip the circuit so it becomes open
+        for (let i = 0; i < 4; i++) {
+            try {
+                await request.invoke();
+                fail();
+            }
+            catch (err) {
+                if (i === 0) {
+                    // the first requests should fail with a timeout status and the circuit should be closed
+                    expect(err.code).toBe(RequestErrorCode.timeout);
+                    expect(circuitBreaker.state).toBe(CircuitBreakerState.closed);
+                }
+                else if (i === 1) {
+                    // the second request should fail with a timeout status but then the circuit breaker shoud now be in an open state because of the failure
+                    expect(err.code).toBe(RequestErrorCode.timeout);
+                    expect(circuitBreaker.state).toBe(CircuitBreakerState.open);
+                }                
+                else {
+                    // then the circuit breaker should now be open and rejecting requests with service unavailable
+                    expect(err.code).toBe(RequestErrorCode.serviceUnavailable);
+                    expect(circuitBreaker.state).toBe(CircuitBreakerState.open);
+                }
+            }
+        }
+    }); 
     
     test("with circuit breaker that transitions from open to half-open", async () => {
         const circuitBreaker = createCircuitBreaker({

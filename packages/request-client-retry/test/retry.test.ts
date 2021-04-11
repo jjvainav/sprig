@@ -37,6 +37,36 @@ describe("request retry", () => {
             expect(err.response.status).toBe(500);
         }
     });
+
+    test("with interceptor add to request", async () => {
+        mockResponse({ status: 500 });
+
+        let countBefore = 0;
+        let countAfter = 0;
+
+        try {
+            await client.request({
+                method: "GET",
+                url: "http://localhost"
+            })
+            .withResponseInterceptor(() => countBefore++)
+            .withResponseInterceptor(retry({
+                attempts: 3,
+                retryResponse: [500]
+            }))
+            .invoke()
+            .thenUse(() => countAfter++);
+
+            fail();
+        }
+        catch(err) {
+            expect(countBefore).toBe(4); // one for the first request and three retries
+            expect(countAfter).toBe(1);
+            expect(err.code).toBe(RequestErrorCode.httpError);
+            expect(err.response).toBeDefined();
+            expect(err.response.status).toBe(500);
+        }
+    });
     
     test("with retry handler and event callbacks", async () => {
         mockResponse({ status: 500 });
