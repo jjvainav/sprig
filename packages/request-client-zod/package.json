@@ -1,0 +1,30 @@
+{
+    "name": "@sprig/request-client-zod",
+    "description": "Provides a request client response handler for validating response data using zod.",
+    "version": "0.1.54",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jjvainav/sprig.git"
+    },
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc",
+        "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
+        "test": "jest"
+    },
+    "dependencies": {
+        "@sprig/request-client": "0.1.54",
+        "zod": "^1.11.13"
+    },
+    "devDependencies": {
+        "@sprig/request-client-mock": "0.1.54"
+    }
+}
