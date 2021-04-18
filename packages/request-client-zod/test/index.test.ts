@@ -28,7 +28,8 @@ describe("validate", () => {
             status: 200,
             data: {
                 foo: "foo",
-                foobar: { bar: "bar" }
+                foobar: { bar: "bar" },
+                bar: "bar"
             }
         });
 
@@ -40,6 +41,7 @@ describe("validate", () => {
         .invoke()
         .then(response => validate(response, fooSchema));
 
+        expect((<any>result).bar).toBeUndefined();
         expect(result.foo).toBe("foo");
         expect(result.foobar.bar).toBe("bar");
     });    

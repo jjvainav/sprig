@@ -6,8 +6,7 @@
         "declaration": false,
         "declarationMap": false,
         "outDir": "dist",
-        "strictNullChecks": true,
-        "strictPropertyInitialization": true,
+        "strict": true,
         "types": ["jest"]
     },
     "include": [".", "../src"]

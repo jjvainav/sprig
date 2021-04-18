@@ -27,10 +27,10 @@ function createSequentialScheduler<T>(): IQueueScheduler<T> {
         let isCanceled = false;
         let isDone = false;
 
-        const start = async (resolve: (value?: T | PromiseLike<T>) => void) => {
+        const start = async (resolve: (value: T | PromiseLike<T>) => void) => {
             // - the await is so that the task is be completed before flagging as done
             // - if canceled just resolve with no value and skip executing the task
-            isCanceled ? resolve() : resolve(await task());
+            isCanceled ? resolve(<any>undefined) : resolve(await task());
             isDone = true;
         };
 
