@@ -1,7 +1,7 @@
 {
     "name": "@sprig/event-emitter-dom",
     "description": "Event emitter class extensions for DOM events.",
-    "version": "0.1.55",
+    "version": "0.1.56",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,6 +21,6 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/event-emitter": "0.1.55"
+        "@sprig/event-emitter": "0.1.56"
     }
 }
