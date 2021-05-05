@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-mock",
     "description": "Provides jest mock support for the request client.",
-    "version": "0.1.56",
+    "version": "0.1.57",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -24,7 +24,7 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.1.56",
+        "@sprig/request-client": "0.1.57",
         "axios": "^0.21.1",
         "eventsource": "^1.1.0",
         "http-status-codes": "^1.3.2"
