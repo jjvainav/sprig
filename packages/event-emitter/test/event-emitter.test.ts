@@ -327,7 +327,7 @@ describe("event emmitter", () => {
         const emitter = new EventEmitter("test");
         let flag = false;
 
-        emitter.event.once(() => new Promise(resolve => {
+        emitter.event.once(() => new Promise<void>(resolve => {
             setTimeout(() => {
                 flag = true;
                 resolve();
