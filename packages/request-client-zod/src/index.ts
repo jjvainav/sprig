@@ -37,6 +37,7 @@ export function validate<T>(response: IResponse, schema: zod.ZodSchema<T>): T {
     throw new RequestError({
         code: RequestErrorCode.invalidResponse,
         message: getErrorMessage(result.error),
-        request: response.request
+        request: response.request,
+        response
     });
 }

@@ -12,7 +12,8 @@ export function validate<T>(response: IResponse, schema: yup.Schema<T>, options?
                 reject(new RequestError({
                     code: RequestErrorCode.invalidResponse,
                     message: err.errors.toString(),
-                    request: response.request
+                    request: response.request,
+                    response
                 })));
     });
 }
