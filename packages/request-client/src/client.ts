@@ -1,5 +1,4 @@
 import axios, { AxiosError } from "axios";
-import EventSource from "eventsource";
 
 /** Represents an error while attempting to make a request. */
 export enum RequestErrorCode {
@@ -147,6 +146,24 @@ export interface IRequestPromise extends Promise<IResponse> {
     thenUse(interceptor: IResponseInterceptor): IRequestPromise;
 }
 
+/** Builds a new request client using the specified event source factory method for creating EventSource instances. */
+export function buildClient(createEventSource: (options: IRequestOptions) => EventSource): IRequestClient {
+    return {
+        /** Invokes an HTTP request. */
+        request(options: IRequestOptions): IRequest {
+            // TODO: need to check if a network connection is available
+            return injectRequestId(new RequestInstance(options, axiosInvoker));
+        },
+        /** 
+         * Connects to an HTTP endpoint that opens an event-stream; if successful, the response data will contain a reference to the EventSource. 
+         * Note: response interceptors will only be invoked on the initial connection and not agains received event messages.
+         */
+        stream(options: IEventStreamOptions): IRequest {
+            return new RequestInstance(options, createEventSourceInvoker(createEventSource));
+        }
+    };
+}
+
 /** Determines if the specified response status code is expected by the provided request. */
 export function isExpectedStatus(request: IRequest, status: number): boolean {
     if (!request.options.expectedStatus) {
@@ -191,18 +208,59 @@ function createErrorForResponse(request: IRequest, response: { status: number, d
     });     
 }
 
-function createEventSource(options: IRequestOptions): EventSource {
-    // Some notes about the EventSource and polyfill
-    // 1) with the EventSource polyfill an error event will contain the http status code whereas the native EventSource does not
-    // 2) the native EventSource does not support setting HTTP headers whereas EventSource polyfill does
-    // 3) the polyfill has issues on the browser not showing events in debug: https://github.com/Yaffle/EventSource/issues/79
-    // 4) the polyfill has issues on the browser (and node) when the server restarts the polyfill will make multiple connections: https://github.com/EventSource/eventsource/issues/89
-    //      a) consider using the polyfill exclusively after #4 is fixed since the error event includes the http status code
-    if (!options.headers && typeof window !== "undefined" && window.EventSource) {
-        return <EventSource>new window.EventSource(options.url);
-    }
-
-    return new EventSource(options.url, { headers: options.headers });
+function createEventSourceInvoker(createEventSource: (options: IRequestOptions) => EventSource): IRequestInvoker {
+    return request => new Promise((resolve, reject) => {
+        const source = createEventSource(request.options);
+        const onopen = () => {
+            source.removeEventListener("open", onopen);
+            source.removeEventListener("error", onerror);
+    
+            resolve({
+                request,
+                response: {
+                    request: request,
+                    status: 200,
+                    data: source
+                }
+            });
+        };
+        const onerror = (event: Event) => {
+            source.removeEventListener("open", onopen);
+            source.removeEventListener("error", onerror);
+    
+            if (source.readyState !== source.CLOSED) {
+                // should not get here but just to be safe
+                source.close();
+            }
+    
+            // see notes above about native EventSource not including status code - return a generic 400 if a status code is not available
+            const status: number = (<any>event).status;
+            if (status) {
+                // the EventSource polyfill will include the HTTP status if the request returned a non-200 status code and 
+                // is useful if the connection failed for some reason other than a network issue (e.g. unauthorized, invalid endpoint, etc.)
+                reject(createErrorForResponse(request, { status, data: {} }, (<any>event).message));    
+            }
+    
+            // the native EventSource does not provide a status code or any other useful info for a failed connection
+            if (typeof window !== "undefined" && !window.navigator.onLine) {
+                reject({
+                    code: RequestErrorCode.networkUnavailable,
+                    message: "Network unavailable.",
+                    request: request
+                });
+            }
+    
+            // if we get here assume there was an issue with the client but we aren't able to determine exactly what
+            reject({
+                code: RequestErrorCode.clientError,
+                message: "Failed to connect to server.",
+                request: request
+            });
+        };
+    
+        source.addEventListener("error", onerror);
+        source.addEventListener("open", onopen);
+    });
 }
 
 const alphabet = "abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
@@ -277,59 +335,6 @@ const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) =
             reject(new Error(`Unexpected error from Axios (${error.message})`));
         }
     });
-});
-
-const eventSourceInvoker: IRequestInvoker = request => new Promise((resolve, reject) => {
-    const source = createEventSource(request.options);
-    const onopen = () => {
-        source.removeEventListener("open", onopen);
-        source.removeEventListener("error", onerror);
-
-        resolve({
-            request,
-            response: {
-                request: request,
-                status: 200,
-                data: source
-            }
-        });
-    };
-    const onerror = (event: Event) => {
-        source.removeEventListener("open", onopen);
-        source.removeEventListener("error", onerror);
-
-        if (source.readyState !== source.CLOSED) {
-            // should not get here but just to be safe
-            source.close();
-        }
-
-        // see notes above about native EventSource not including status code - return a generic 400 if a status code is not available
-        const status: number = (<any>event).status;
-        if (status) {
-            // the EventSource polyfill will include the HTTP status if the request returned a non-200 status code and 
-            // is useful if the connection failed for some reason other than a network issue (e.g. unauthorized, invalid endpoint, etc.)
-            reject(createErrorForResponse(request, { status, data: {} }, (<any>event).statusText));    
-        }
-
-        // the native EventSource does not provide any useful info for a failed connection
-        if (typeof window !== "undefined" && !window.navigator.onLine) {
-            reject({
-                code: RequestErrorCode.networkUnavailable,
-                message: "Network unavailable.",
-                request: request
-            });
-        }
-
-        // if we get here assume there was an issue with the client but we aren't able to determine exactly what
-        reject({
-            code: RequestErrorCode.clientError,
-            message: "Failed to connect to server.",
-            request: request
-        });
-    };
-
-    source.addEventListener("error", onerror);
-    source.addEventListener("open", onopen);
 });
 
 export class RequestError extends Error {
@@ -568,18 +573,3 @@ class RequestInstance implements IRequest {
             (<RequestInstance>request).options !== undefined;
     }
 }
-
-export const client: IRequestClient = {
-    /** Invokes an HTTP request. */
-    request(options: IRequestOptions): IRequest {
-        // TODO: need to check if a network connection is available
-        return injectRequestId(new RequestInstance(options, axiosInvoker));
-    },
-    /** 
-     * Connects to an HTTP endpoint that opens an event-stream; if successful, the response data will contain a reference to the EventSource. 
-     * Note: response interceptors will only be invoked on the initial connection and not agains received event messages.
-     */
-    stream(options: IEventStreamOptions): IRequest {
-        return new RequestInstance(options, eventSourceInvoker);
-    }
-};

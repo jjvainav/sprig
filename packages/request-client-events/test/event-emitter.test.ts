@@ -1,5 +1,6 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
+import client from "@sprig/request-client";
 import { ReadyState, RequestEventStream } from "../src"
 
 describe("request event stream", () => { 
@@ -14,6 +15,7 @@ describe("request event stream", () => {
         });
 
         const stream = new RequestEventStream({
+            client,
             method: "GET",
             url: "http://localhost"
         });
@@ -31,6 +33,7 @@ describe("request event stream", () => {
         });
 
         const stream = new RequestEventStream({
+            client,
             method: "GET",
             url: "http://localhost"
         });
@@ -49,9 +52,10 @@ describe("request event stream", () => {
 
     test("on connection with server failed", async done => {
         // note: an EventSource does not provide access to the failed response body
-        mockResponse({ status: 400 });
+        mockResponse({ status: 400, data: { message: "Test" } });
 
         const stream = new RequestEventStream({
+            client,
             method: "GET",
             url: "http://localhost"
         });
@@ -69,6 +73,7 @@ describe("request event stream", () => {
         mockResponse({ status: 200, data: "100" });
 
         const stream = new RequestEventStream<number>({
+            client,
             method: "GET",
             url: "http://localhost",
             validate: (data, resolve) => resolve(Number.parseInt(data))
@@ -84,6 +89,7 @@ describe("request event stream", () => {
         mockResponse({ status: 200, data: "foo" });
 
         const stream = new RequestEventStream<number>({
+            client,
             method: "GET",
             url: "http://localhost",
             validate: (data, _, reject) => reject("Data is not a number.")
@@ -103,7 +109,7 @@ describe("request event stream", () => {
             data: { foo: "bar" }
         });
 
-        const stream = new RequestEventStream({ url: "http://localhost" });
+        const stream = new RequestEventStream({ client, url: "http://localhost" });
 
         expect(stream.readyState).toBe(ReadyState.closed);
         stream.onMessage(() => {
@@ -126,6 +132,7 @@ describe("request event stream", () => {
         });
 
         const stream = new RequestEventStream({
+            client,
             method: "GET",
             url: "http://localhost"
         });
@@ -145,6 +152,7 @@ describe("request event stream", () => {
         });
 
         const stream = new RequestEventStream({
+            client,
             method: "GET",
             url: "http://localhost"
         });

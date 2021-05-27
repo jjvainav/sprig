@@ -1,38 +1,39 @@
-import client from "@sprig/request-client";
-import { RequestEventStream } from "@sprig/request-client-events";
+// the commented import uses the Polyfill that has dependency on node js so a webpack polyfill would be required (https://www.npmjs.com/package/node-polyfill-webpack-plugin)
+// import client from "@sprig/request-client";
+import client from "@sprig/request-client/dist/native";
+import { ReadyState, RequestEventStream } from "@sprig/request-client-events";
 
+let listener;
 const messageCache = new Map();
 
-const header = document.getElementById("header");
-header.innerText = "Loading...";
+const connection = document.getElementById("connection");
+connection.addEventListener("click", () => toggleConnection());
 
 const form = document.getElementById("form");
+const message = document.getElementById("message");
+const submit = document.getElementById("submit");
 form.addEventListener("submit", event => {
-    const message = document.getElementById("message");
     if (message.value) {
-        const submit = document.getElementById("submit");
-        const resetForm = () => {
-            submit.disabled = false;
-            message.value = "";
-        };
-
-        submit.disabled = true;
-        client.request({ url: "/messages", method: "POST", data: { message: message.value } })
-            .invoke()
-            .then(() => resetForm())
-            .catch(() => resetForm());
+        sendMessage(message.value);
+        message.value = "";
     }
 
     event.preventDefault();
 });
 
-client.request({ url: "/messages", method: "GET" }).invoke().then(result => {
-    header.innerText = "Messages";
-    appendMessages(result.data.messages);
+const stream = new RequestEventStream({ client, method: "GET", url: "/messages/bind" });
+stream.onClose(() => setDisconnected());
+stream.onError(err => {
+    disconnect();
+    setDisconnected(); // make sure things are properly cleaned up
+    alert(err.message);
+});
+stream.onOpen(() => {
+    loadMessages();
+    setConnected();
 });
 
-const stream = new RequestEventStream({ method: "GET", url: "/messages/bind" });
-stream.onMessage(event => appendMessages([event.data]));
+setDisconnected();
 
 function appendMessages(values) {
     const messages = document.getElementById("messages");
@@ -47,4 +48,53 @@ function appendMessages(values) {
             messageCache.set(value.id, value.message);
         }
     });
+}
+
+function connect() {
+    connection.disabled = true;
+    connection.value = "Connecting...";
+
+    // attaching to the event will automatically connect
+    listener = stream.onMessage(event => appendMessages([event.data]));
+}
+
+function disconnect() {
+    // removing the onMessage event handler will automatically disconnect the stream
+    listener.remove();
+}
+
+function loadMessages() {
+    client.request({ url: "/messages", method: "GET" })
+        .invoke()
+        .then(result => appendMessages(result.data.messages));
+}
+
+function sendMessage(value) {
+    client.request({ url: "/messages", method: "POST", data: { message: value } }).invoke();
+}
+
+function setConnected() {
+    message.disabled = false;
+    submit.disabled = false;
+
+    connection.disabled = false;
+    connection.value = "Disconnect";
+}
+
+function setDisconnected() {
+    message.value = "";
+    message.disabled = true;
+    submit.disabled = true;
+
+    connection.disabled = false;
+    connection.value = "Connect";
+}
+
+function toggleConnection() {
+    if (stream.readyState === ReadyState.open) {
+        disconnect();
+    }
+    else if (stream.readyState === ReadyState.closed) {
+        connect();
+    }
 }

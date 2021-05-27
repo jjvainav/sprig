@@ -3,7 +3,7 @@ import EventSource from "eventsource";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
 import { basicAuthentication } from "../src";
-import { client, RequestErrorCode, RequestError } from "../src/client";
+import client, { RequestErrorCode, RequestError } from "../src";
 
 jest.mock("axios");
 jest.genMockFromModule("eventsource");

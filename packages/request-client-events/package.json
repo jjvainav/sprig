@@ -22,11 +22,9 @@
     },
     "dependencies": {
         "@sprig/event-emitter": "0.1.58",
-        "@sprig/request-client": "0.1.58",
-        "eventsource": "^1.1.0"
+        "@sprig/request-client": "0.1.58"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.1.58",
-        "@types/eventsource": "^1.1.5"
+        "@sprig/request-client-mock": "0.1.58"
     }
 }

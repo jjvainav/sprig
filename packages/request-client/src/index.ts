@@ -1,10 +1,15 @@
 export * from "./authorization";
+export * from "./common";
 
-import { client } from "./client";
+import EventSourcePolyfill from "eventsource";
+import { buildClient } from "./client";
+const client = buildClient(options => {
+    // by default use the EventSource polyfill as it provides additional support not available in the browser's native EventSource:
+    // 1) support for HTTP headers -- useful when using authorization tokens
+    // 2) the EventSource polyfill includes http status codes when failing to connected -- useful when determining the reason for a failure
+    // 3) has dependencies on node core modules so node js polyfills are required when using on the browser
+    // 4) the polyfill will not show events in the browser networking panel: https://github.com/EventSource/eventsource/issues/94
+    return <EventSource>(new EventSourcePolyfill(options.url, { headers: options.headers }));
+});
+
 export default client;
-
-export { 
-    IEventStreamBuilder, IEventStreamOptions, IRequest, IRequestBuilder, IRequestClient, IRequestInterceptor, 
-    IRequestInterceptorContext, IRequestOptions, IRequestPromise, IResponse, IResponseInterceptor, IResponseInterceptorContext, 
-    isExpectedStatus, RequestError, RequestErrorArgs, RequestErrorCode, RequestInterceptorFunction, ResponseInterceptorFunction
-} from "./client";

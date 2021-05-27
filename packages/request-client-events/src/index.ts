@@ -1,6 +1,6 @@
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
-import client, { IEventStreamOptions, IRequest, IRequestPromise, IResponse, RequestError, RequestErrorCode } from "@sprig/request-client";
-import EventSource from "eventsource";
+import { IEventStreamOptions, IRequest, IRequestClient, IRequestPromise, IResponse, RequestError, RequestErrorCode } from "@sprig/request-client/dist/common";
+//import EventSource from "eventsource";
 
 /** Defines the event data for an invalid message received. */
 export interface IInvalidDataEvent {
@@ -32,6 +32,8 @@ export interface IEventStreamHttpError extends IEventStreamError {
 
 /** Options for the server-sent event emitters. */
 export interface IEventStreamEmitterOptions<TData> extends IEventStreamOptions {
+    /** A request client used to connect to an event stream. */
+    readonly client: IRequestClient;
     /** If true, the event stream will automatically be closed when all message handlers have been unregistered; the default is true. */
     readonly autoClose?: boolean;
     /** If true, the event stream will automatically connected when a message handler has been registered; the default is true. */
@@ -178,7 +180,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
         if (!this.source && !this.isConnecting) {
             this.isConnecting = true;
 
-            let request = client.stream(this.options);
+            let request = this.options.client.stream(this.options);
             request = this.options.beforeRequest ? this.options.beforeRequest(request) : request;
 
             let promise = request.invoke();
@@ -196,7 +198,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
                         data => this._message.emit({ data }),
                         message => this._invalidData.emit({ data: e.data, message }));
 
-                    // note: the onerror event is raised a connection attempt fails:
+                    // note: the onerror event is raised when a connection attempt fails:
                     // https://developer.mozilla.org/en-US/docs/Web/API/EventSource/error_event
                     // when this happens the request client will reject with a RequestError
 
