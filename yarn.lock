@@ -7550,7 +7550,7 @@ yup@^0.27.0:
     synchronous-promise "^2.0.6"
     toposort "^2.0.2"
 
-zod@3.0.0-beta.1:
-  version "3.0.0-beta.1"
-  resolved "https://registry.yarnpkg.com/zod/-/zod-3.0.0-beta.1.tgz#97e6e3ac83a07521f66c8cceb68225c250f9345d"
-  integrity sha512-OTmLkOJoq/PFsZfHN2GAUnFJi14iJs4Oyo6nuHzRUO2ddIgMrEdYmEIEwc1FV0BkflLDpyRFiTngXN9uy7wYpg==
+zod@^3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/zod/-/zod-3.1.0.tgz#b9b6c0f949f9b54eb2c32cbbe81e9d0f24a143d8"
+  integrity sha512-qS0an8oo9EvVLVqIVxMZrQrfR2pVwBtlPp+BzTB/F19IyPTRaLLoFfdXRzgh626pxFR1efuTWV8bPoEE58KwqA==
