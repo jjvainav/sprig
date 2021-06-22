@@ -1,0 +1,32 @@
+{
+    "name": "@sprig/edit-controller",
+    "description": "Provides a mediator for managing applying and synchronizing edits for an edit model with a remote server.",
+    "version": "0.1.60",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jjvainav/sprig.git"
+    },
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc -b .",
+        "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
+        "test": "jest"
+    },
+    "dependencies": {
+        "@sprig/edit-model": "0.1.60",
+        "@sprig/edit-operation": "0.1.60",
+        "@sprig/edit-queue": "0.1.60",
+        "@sprig/request-client-events": "0.1.60"
+    },
+    "devDependencies": {
+        "zod": "^3.1.0"
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+      "allowJs": false,
+      "composite": false,
+      "declaration": false,
+      "declarationMap": false,
+      "outDir": "dist",
+      "strictPropertyInitialization": true,
+      "types": ["jest"],
+      "lib": [
+        "dom",
+        "ESNext"
+      ]
+    },
+    "include": [".", "../src"]
+  }

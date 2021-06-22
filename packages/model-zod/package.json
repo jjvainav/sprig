@@ -1,0 +1,27 @@
+{
+    "name": "@sprig/model-zod",
+    "description": "Provides support for validating a model using zod.",
+    "version": "0.1.60",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jjvainav/sprig.git"
+    },
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc -b .",
+        "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
+        "test": "jest"
+    },
+    "dependencies": {
+        "@sprig/model": "0.1.60",
+        "zod": "^3.1.0"
+    }
+}
