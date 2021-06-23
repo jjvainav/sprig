@@ -15,18 +15,21 @@ export type ModelErrors<TAttributes> = {
 /** Defines the attributes for a model. */
 export interface IModelAttributes {
     readonly id: string;
+    readonly revision?: number;
 }
 
 /** Defines a model object. */
  export interface IModel<TAttributes extends IModelAttributes = IModelAttributes> {
     readonly id: string;
+    readonly revision: number;
     readonly errors: ModelErrors<TAttributes>;
 
     clearError(attribute: keyof TAttributes): void;
     clearErrors(): void;
     hasError(attribute?: keyof TAttributes): boolean;
     isNew(): boolean;
-    setErrorMessage(attribute: keyof TAttributes, message: string): void;
+    setErrorMessage(attribute: keyof TAttributes, message: string): void;    
+    setRevision(revision: number): void;
     validate(attribute?: keyof TAttributes): boolean;
 };
 
@@ -44,12 +47,18 @@ interface IModelValidator<TAttributes extends IModelAttributes> {
 export abstract class Model<TAttributes extends IModelAttributes = IModelAttributes> implements IModel<TAttributes> {
     private validator?: IModelValidator<TAttributes>;
     private _errors: ModelErrors<TAttributes> = {};
+    private _revision: number;
 
-    constructor(readonly id = "") {
+    constructor(readonly id = "", revision = 1) {
+        this._revision = revision;
     }
 
     get errors(): ModelErrors<TAttributes> {
         return this._errors;
+    }
+
+    get revision(): number {
+        return this._revision;
     }
 
     validate(attribute?: keyof TAttributes): boolean {
@@ -85,6 +94,10 @@ export abstract class Model<TAttributes extends IModelAttributes = IModelAttribu
         else {
             this._errors = { ...this._errors, [attribute]: message };
         }
+    }
+
+    setRevision(revision: number): void {
+        this._revision = revision;
     }
 
     /** 

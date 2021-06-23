@@ -26,6 +26,11 @@ export interface IEditHandler<TEdit extends IEditOperation = IEditOperation> {
     (edit: TEdit): IEditOperation | undefined;
 }
 
+/** Maps edit handlers to edits based on the edit type. */
+export interface IEditHandlerMap {
+    readonly [editType: string]: IEditHandler;
+}
+
 /** 
  * A callback that provides a list of edits for an edit model. It is expected that the returned edit operations are in order
  * and the model's revision is sequential.
@@ -42,8 +47,7 @@ export interface IEditModel<TAttributes extends IEditModelAttributes = IEditMode
     readonly onEditApplied: IEvent<IEditOperation>;
     /** Applies an edit against the model and optionally returns a reverse edit. */
     apply(edit: IEditOperation, options?: IApplyEditOptions): IEditOperation | undefined;
-    /** True if the current model supports applying the provided edit. */
-    canApply(edit: IEditOperation): boolean;
+
     /** Sets a new revision number for the model. */
     setRevision(revision: number): void;
 };
@@ -93,6 +97,8 @@ export abstract class EditModel<TAttributes extends IEditModelAttributes> extend
     setRevision(revision: number): void {
         this.revision = revision;
     }
+
+    
 
     protected registerHandler<TEdit extends IEditOperation = IEditOperation>(type: string, editHandler: IEditHandler<TEdit>): void {
         this.editHandlers.set(type, editHandler);

@@ -4,5 +4,11 @@
         "outDir": "dist",
         "rootDir": "src"
     },
-    "include": ["src"]
-  }
+    "include": ["src"],
+    "references": [
+        { "path": "../edit-operation" },
+        { "path": "../edit-queue" },
+        { "path": "../model" },
+        { "path": "../request-client-events" }
+    ]
+}
