@@ -23,7 +23,6 @@
     "dependencies": {
         "@sprig/async-queue": "0.1.60",
         "@sprig/edit-operation": "0.1.60",
-        "@sprig/edit-queue": "0.1.60",
         "@sprig/model": "0.1.60"
     },
     "devDependencies": {
