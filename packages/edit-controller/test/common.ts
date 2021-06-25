@@ -3,7 +3,7 @@ import { EventEmitter } from "@sprig/event-emitter";
 import { Model, IModel, IModelValidation } from "@sprig/model";
 import { createValidation } from "@sprig/model-zod";
 import * as zod from "zod";
-import { ApplyResult, EditController, IEditEvent, IEditEventStream, IEditEventStreamConnection, IPublishEditResult, SubmitResult } from "../src";
+import { ApplyResult, EditController, IEditDetails, IEditEventStream, IEditEventStreamConnection, IPublishEditResult, SubmitResult } from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -242,41 +242,32 @@ export class MockEditStore {
     }
 }
 
-export class MockEditEventStream implements IEditEventStream<IEditEvent, Error> {
-    private readonly data = new EventEmitter<IEditEvent>("data");
+/** A mock edit event stream; for the sake of simplicity the stream will push data using the IEditDetails format. */
+export class MockEditEventStream implements IEditEventStream<IEditDetails, Error> {
+    private readonly data = new EventEmitter<IEditDetails>("data");
 
     /** An error to return when attempting to open a stream to simulate a failed connection attempt. */
     connectionError?: Error;
 
-    openStream(): Promise<IEditEventStreamConnection<IEditEvent, Error>> {
+    openStream(): Promise<IEditEventStreamConnection<IEditDetails, Error>> {
         return new Promise(resolve => setTimeout(() => {
             resolve({
                 error: this.connectionError,
                 isOpen: !this.connectionError,
                 onData: this.data.event,
-                close: this.close.bind(this)
+                close: () => {}
             });
         },
         0));
     }
 
     /** Pushes an edit event onto the currently opened stream. This is useful for testing receiving events from a remote source/server. */
-    pushEvent(event: IEditEvent): Promise<void> {
+    pushEvent(event: IEditDetails): Promise<void> {
         return this.data.emit(event);
-    }
-
-    toEditEvent(data: IEditEvent): IEditEvent {
-        // this method allows a stream to return data in a different format and then convert into an IEditEvent object
-        // for sake of testing and simplicity we are just going to use the IEditEvent for pushing data through the stream
-        return data;
-    }
-
-    private close(): void {
-
     }
 }
 
-export class ChildController extends EditController<IChildModel> {
+export class ChildController extends EditController<IChildModel, IEditDetails> {
     modelType = "child";
 
     constructor(private readonly store: MockEditStore, model: IChildModel, parent: TestController) {
@@ -320,15 +311,15 @@ export class ChildController extends EditController<IChildModel> {
     }
 }
 
-export class TestController extends EditController<ITestModel> {
+export class TestController extends EditController<ITestModel, IEditDetails> {
     modelType = "test";
 
     constructor(
         private readonly api: MockApi,
         private readonly store: MockEditStore, 
         model: ITestModel, 
-        stream: IEditEventStream) {
-        super(model, stream);
+        stream: IEditEventStream<IEditDetails>) {
+        super(model, stream, { toEditDetails: data => data });
 
         this.registerEditHandlers("addChild", {
             apply: this.applyAddChild.bind(this),
