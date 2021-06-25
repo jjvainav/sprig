@@ -6,9 +6,8 @@
     },
     "include": ["src"],
     "references": [
-        { "path": "../edit-operation" },
+        { "path": "../async-queue" },
         { "path": "../edit-queue" },
-        { "path": "../model" },
-        { "path": "../request-client-events" }
+        { "path": "../model" }
     ]
 }

@@ -31,6 +31,20 @@ describe("sequential async queue", () => {
         expect(results[1]).toBe("bar");
     });
 
+    test("push multiple tasks immediately and await the last task", async () => {
+        const queue = new AsyncQueue<string>();
+        let start = "";
+        let end = "";
+
+        queue.push(createTask("foo", 10, () => start += "foo", () => end += "foo"));
+        queue.push(createTask("bar", 10, () => start += "bar", () => end += "bar"));
+        // the 'baz' task should not start until the others have ended
+        await queue.push(createTask("baz", 0, () => start += "baz", () => end += "baz"));
+
+        expect(start).toBe("foobarbaz");
+        expect(end).toBe("foobarbaz");
+    });
+
     test("push multiple tasks when idle", async () => { 
         const queue = new AsyncQueue<string>();
 
@@ -57,6 +71,18 @@ describe("sequential async queue", () => {
 
         expect(queue.isAborted).toBeTruthy();
         expect(processing).toBe(1);
+    });
+
+    test("push task that throws", async () => {
+        const queue = new AsyncQueue<string>();
+        
+        try {
+            await queue.push(() => { throw new Error("test") });
+            fail();
+        }
+        catch (err) {
+            expect((<Error>err).message).toBe("test");
+        }
     });
 
     test("should emit on idle", async () => {
@@ -106,13 +132,13 @@ describe("sequential async queue", () => {
 
 describe("concurrent async queue", () => {
     test("push single task", async () => {
-        const queue = new AsyncQueue<string>(/* isConcurrent */ true);
+        const queue = new AsyncQueue<string>({ isConcurrent: true });
         const result = await queue.push(createTask("foo"));
         expect(result).toBe("foo");
     });
 
     test("push multiple tasks immediately", async () => {
-        const queue = new AsyncQueue<string>(/* isConcurrent */ true);
+        const queue = new AsyncQueue<string>({ isConcurrent: true });
 
         const promises = [
             queue.push(createTask("foo", 20)),
@@ -129,7 +155,7 @@ describe("concurrent async queue", () => {
         let processing = 0;
         let max = 0;
 
-        const queue = new AsyncQueue<string>(/* isConcurrent */ true);
+        const queue = new AsyncQueue<string>({ isConcurrent: true });
         const onEnd = () => processing--;
         const onStart = () => {
             processing++;

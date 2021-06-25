@@ -1,6 +1,5 @@
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
 import { IEventStreamOptions, IRequest, IRequestClient, IRequestPromise, IResponse, RequestError, RequestErrorCode } from "@sprig/request-client/dist/common";
-//import EventSource from "eventsource";
 
 /** Defines the event data for an invalid message received. */
 export interface IInvalidDataEvent {
@@ -66,7 +65,15 @@ export interface IRequestEventStream<TData = any> {
     /** Forces a stream to close. */
     close(): void;
     /** Manually connects the event stream. */
-    connect(): Promise<void>;
+    connect(): Promise<IConnectionResult>;
+}
+
+/** Defines the result of a connection attempt. */
+export interface IConnectionResult {
+    /** True if successful; otherwise false. */
+    readonly success: boolean;
+    /** A stream error containing information about a failed connection attempt. */
+    readonly error?: IEventStreamError;
 }
 
 export enum ReadyState { 
@@ -109,7 +116,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
     private readonly validate: IMessageValidator<TData>;
     private source?: EventSource;
 
-    private isConnecting = false;
+    private connectionPromise?: Promise<IConnectionResult>;
 
     constructor(private readonly options: IEventStreamEmitterOptions<TData>) {
         const self = this;
@@ -163,7 +170,7 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
     get readyState(): ReadyState {
         return this.source 
             ? this.source.readyState 
-            : this.isConnecting
+            : this.connectionPromise
                 ? ReadyState.connecting
                 : ReadyState.closed;
     }
@@ -172,69 +179,76 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
         if (this.source) {
             this.source.close();
             this.source = undefined;
+            this.connectionPromise = undefined;
             this._close.emit();
         }
     }
 
-    connect(): Promise<void> {
-        if (!this.source && !this.isConnecting) {
-            this.isConnecting = true;
-
-            let request = this.options.client.stream(this.options);
-            request = this.options.beforeRequest ? this.options.beforeRequest(request) : request;
-
-            let promise = request.invoke();
-            promise = this.options.afterRequest ? this.options.afterRequest(promise) : promise;
-
-            return promise
-                .then(response => {
-                    if (!isEventSource(response.data)) {
-                        throw new Error("Invalid response data.");
-                    }
-
-                    this.source = response.data;
-                    this.source.onmessage = e => this.validate(
-                        e.data,
-                        data => this._message.emit({ data }),
-                        message => this._invalidData.emit({ data: e.data, message }));
-
-                    // note: the onerror event is raised when a connection attempt fails:
-                    // https://developer.mozilla.org/en-US/docs/Web/API/EventSource/error_event
-                    // when this happens the request client will reject with a RequestError
-
-                    // also note: once connected the EventSource will remain 'connected' even 
-                    // if the network goes down and the browser will constantly retry to reconnected
-
-                    this.isConnecting = false;
-                    this._open.emit();
-                })
-                .catch((err: Error) => {
-                    this.isConnecting = false;
-                    if (RequestError.isRequestError(err)) {
-                        if (err.code === RequestErrorCode.httpError) {
-                            this._error.emit({
-                                type: "http",
-                                response: err.response,
-                                message: err.message
-                            });
-                        }
-                        else if (err.code === RequestErrorCode.networkUnavailable) {
-                            this._error.emit({ type: "network_unavailable", message: err.message });
-                        }
-                        else {
-                            this._error.emit({ type: "connection", message: err.message });
-                        }
-                    }
-                    else {
-                        this._error.emit({
-                            type: "stream",
-                            message: err.message
-                        });
-                    }
-                });
+    connect(): Promise<IConnectionResult> {
+        if (this.connectionPromise) {
+            return this.connectionPromise;
         }
 
-        return Promise.resolve();
+        let request = this.options.client.stream(this.options);
+        request = this.options.beforeRequest ? this.options.beforeRequest(request) : request;
+
+        let promise = request.invoke();
+        promise = this.options.afterRequest ? this.options.afterRequest(promise) : promise;
+
+        this.connectionPromise = promise
+            .then(response => {
+                if (!isEventSource(response.data)) {
+                    throw new Error("Invalid response data.");
+                }
+
+                this.source = response.data;
+                this.source.onmessage = e => this.validate(
+                    e.data,
+                    data => this._message.emit({ data }),
+                    message => this._invalidData.emit({ data: e.data, message }));
+
+                // note: the onerror event is raised when a connection attempt fails:
+                // https://developer.mozilla.org/en-US/docs/Web/API/EventSource/error_event
+                // when this happens the request client will reject with a RequestError
+
+                // also note: once connected the EventSource will remain 'connected' even 
+                // if the network goes down and the browser will constantly retry to reconnected
+
+                this._open.emit();
+                return { success: true };
+            })
+            .catch((err: Error) => {
+                let error: IEventStreamError;
+                if (RequestError.isRequestError(err)) {
+                    if (err.code === RequestErrorCode.httpError) {
+                        error = {
+                            type: "http",
+                            response: err.response,
+                            message: err.message
+                        };
+                    }
+                    else if (err.code === RequestErrorCode.networkUnavailable) {
+                        error = { type: "network_unavailable", message: err.message };
+                    }
+                    else {
+                        error = { type: "connection", message: err.message };
+                    }
+                }
+                else {
+                    error = {
+                        type: "stream",
+                        message: err.message
+                    };
+                }
+
+                // need to reset the connection promise manually if there is an error trying to connect
+                // do so before raising the error event incase listens want to retry the connection
+                this.connectionPromise = undefined;
+                this._error.emit(error);
+                return { success: false };
+            });
+
+        return this.connectionPromise;
     }
 
     private shouldAutoClose(): boolean {

@@ -1,23 +1,13 @@
 import { IEditOperation } from "@sprig/edit-operation";
+import { EventEmitter } from "@sprig/event-emitter";
 import { Model, IModel, IModelValidation } from "@sprig/model";
 import { createValidation } from "@sprig/model-zod";
 import * as zod from "zod";
-import { ApplyResult, EditController, IEditEventStream, IPublishEditResult, SubmitResult } from "../src";
-
-
-
-// TODO: decouple event stream and instead have a generic event?
-// TODO: update the apply edit handler to return an IApplyEditResult
-// -- this would contain a reverse edit if successful
-// -- support returning a value indicating the apply was not successful
-// -- if not successful attempt to sync the model in the controller
-// TODO: delete the edit-model package
-
-
+import { ApplyResult, EditController, IEditEvent, IEditEventStream, IEditEventStreamConnection, IPublishEditResult, SubmitResult } from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
-interface IEditRecord {
+export interface IEditRecord {
     readonly modelId: string;
     readonly modelType: string;
     readonly edit: IEditOperation;
@@ -25,7 +15,7 @@ interface IEditRecord {
 }
 
 /** Used to initialize a test model. */
-interface ITestAttributes {
+export interface ITestAttributes {
     readonly id: string;
     readonly foo?: string;
     readonly bar?: string;
@@ -35,20 +25,20 @@ interface ITestAttributes {
 }
 
 /** Used to initialize a child model. */
-interface IChildAttributes {
+export interface IChildAttributes {
     readonly id: string;
     readonly value: string;
     readonly revision: number;
 }
 
 /** A child object returned from the mock API. */
-interface IChild {
+export interface IChild {
     readonly id: string;
     readonly value: string;
     readonly revision: number; 
 }
 
-interface ITestModel extends IModel<ITestAttributes>, ITestAttributes {
+export interface ITestModel extends IModel<ITestAttributes>, ITestAttributes {
     foo?: string;
     bar?: string;
 
@@ -58,39 +48,54 @@ interface ITestModel extends IModel<ITestAttributes>, ITestAttributes {
     removeItem(item: string): string | undefined;
 }
 
-interface IChildModel extends IModel<IChildAttributes>, IChildAttributes {
+export interface IChildModel extends IModel<IChildAttributes>, IChildAttributes {
     value: string;
 }
 
-interface IAddChild extends IEditOperation {
+export interface IAddChild extends IEditOperation {
     readonly type: "addChild";
     readonly data: {
         readonly childId: string;
     };
 }
 
-interface IAddItem extends IEditOperation {
+export interface IAddItem extends IEditOperation {
     readonly type: "addItem";
     readonly data: {
         readonly item: string;
     };
 }
 
-interface IRemoveChild extends IEditOperation {
+export interface ICreateTest extends IEditOperation {
+    readonly type: "create";
+    readonly data: {
+        readonly foo?: string;
+        readonly bar?: string;
+    };
+}
+
+export interface ICreateChild extends IEditOperation {
+    readonly type: "create";
+    readonly data: {
+        readonly value: string;
+    };
+}
+
+export interface IRemoveChild extends IEditOperation {
     readonly type: "removeChild";
     readonly data: {
         readonly childId: string;
     };
 }
 
-interface IRemoveItem extends IEditOperation {
+export interface IRemoveItem extends IEditOperation {
     readonly type: "removeItem";
     readonly data: {
         readonly item: string;
     };
 }
 
-interface IUpdateTest extends IEditOperation {
+export interface IUpdateTest extends IEditOperation {
     readonly type: "update";
     readonly data: {
         readonly foo?: string;
@@ -98,14 +103,21 @@ interface IUpdateTest extends IEditOperation {
     };
 }
 
-interface IUpdateChild extends IEditOperation {
+export interface IUpdateChild extends IEditOperation {
     readonly type: "update";
     readonly data: {
         readonly value: string;
     };
 }
 
-class TestModel extends Model<ITestAttributes> implements ITestModel {
+export namespace Edits {
+    export const createAddChildEdit = (childId: string): IAddChild => ({ type: "addChild", data: { childId } });
+    export const createAddItemEdit = (item: string): IAddItem => ({ type: "addItem", data: { item } });
+    export const createUpdateChildEdit = (value: string): IUpdateChild => ({ type: "update", data: { value } });
+    export const createUpdateTestEdit = (foo: string, bar: string): IUpdateTest => ({ type: "update", data: { foo, bar } });
+}
+
+export class TestModel extends Model<ITestAttributes> implements ITestModel {
     foo?: string;
     bar?: string;
     
@@ -166,7 +178,7 @@ class TestModel extends Model<ITestAttributes> implements ITestModel {
     }
 }
 
-class ChildModel extends Model<IChildAttributes> implements IChildModel {
+export class ChildModel extends Model<IChildAttributes> implements IChildModel {
     value: string = "";
 
     constructor(attributes?: IChildAttributes) {
@@ -186,19 +198,19 @@ class ChildModel extends Model<IChildAttributes> implements IChildModel {
 }
 
 /** Mock API for fetching resources from the server. */
-class MockApi {
+export class MockApi {
     readonly children = new Map<string, IChild>();
 
     getChild(id: string): Promise<IChild | undefined> {
         return new Promise(resolve => setTimeout(() => {
             resolve(this.children.get(id));
         }, 
-        0));
+        Math.floor(Math.random() * 20)));
     }
 }
 
 /** Mock storage for edit operations. */
-class MockEditStore {
+export class MockEditStore {
     private readonly records: IEditRecord[] = [];
 
     addEdit(modelType: string, modelId: string, edit: IEditOperation): number {
@@ -230,8 +242,42 @@ class MockEditStore {
     }
 }
 
-class ChildController extends EditController<IChildModel> {
-    protected modelType = "child";
+export class MockEditEventStream implements IEditEventStream<IEditEvent, Error> {
+    private readonly data = new EventEmitter<IEditEvent>("data");
+
+    /** An error to return when attempting to open a stream to simulate a failed connection attempt. */
+    connectionError?: Error;
+
+    openStream(): Promise<IEditEventStreamConnection<IEditEvent, Error>> {
+        return new Promise(resolve => setTimeout(() => {
+            resolve({
+                error: this.connectionError,
+                isOpen: !this.connectionError,
+                onData: this.data.event,
+                close: this.close.bind(this)
+            });
+        },
+        0));
+    }
+
+    /** Pushes an edit event onto the currently opened stream. This is useful for testing receiving events from a remote source/server. */
+    pushEvent(event: IEditEvent): Promise<void> {
+        return this.data.emit(event);
+    }
+
+    toEditEvent(data: IEditEvent): IEditEvent {
+        // this method allows a stream to return data in a different format and then convert into an IEditEvent object
+        // for sake of testing and simplicity we are just going to use the IEditEvent for pushing data through the stream
+        return data;
+    }
+
+    private close(): void {
+
+    }
+}
+
+export class ChildController extends EditController<IChildModel> {
+    modelType = "child";
 
     constructor(private readonly store: MockEditStore, model: IChildModel, parent: TestController) {
         super(model, parent);
@@ -274,8 +320,8 @@ class ChildController extends EditController<IChildModel> {
     }
 }
 
-class TestController extends EditController<ITestModel> {
-    protected modelType = "test";
+export class TestController extends EditController<ITestModel> {
+    modelType = "test";
 
     constructor(
         private readonly api: MockApi,
@@ -434,78 +480,3 @@ class TestController extends EditController<ITestModel> {
         0));
     }
 }
-
-describe("edit controller", () => {
-    test("", () => {
-
-    });
-});
-
-describe("synchronizer", () => {
-    test("synchronize model with new edits", async () => {
-        const model = new TestModel({
-            id: "123",
-            foo: "foo",
-            bar: "bar",
-            revision: 1
-        });
-
-        const synchronizer = new Synchronizer(model, () => Promise.resolve([{
-            type: "update",
-            data: {
-                foo: "foo2",
-                bar: "bar2"
-            }
-        }]));
-       
-        await synchronizer.synchronize();
-
-        expect(model.foo).toBe("foo2");
-        expect(model.bar).toBe("bar2");
-        expect(model.revision).toBe(2);
-    });
-
-    test("synchronize model with multiple concurrent requests", async () => {
-        const model = new TestModel({
-            id: "123",
-            foo: "foo",
-            bar: "bar",
-            revision: 1
-        });
-
-        const results = [
-            {
-                type: "update",
-                data: {
-                    foo: "foo2",
-                    bar: "bar2"
-                }
-            },
-            {
-                type: "update",
-                data: {
-                    foo: "foo3",
-                    bar: "bar3"
-                }
-            }
-        ];
-
-        let count = 1;
-        const synchronizer = new Synchronizer(model, (_, startRevision) => new Promise(resolve => {
-            const end = count++;
-            // the start revision will be the model's current revision + 1
-            setTimeout(() => resolve(results.slice((startRevision || 0) - 2, end)), 0);
-        }));
-       
-        // the first synchronize will only contain the first edit whereas the second synchronize will contain both
-        synchronizer.synchronize();
-        // the second call will return the promise for the first request
-        await synchronizer.synchronize();
-        // this call should invoke the synchronize another time
-        await synchronizer.synchronize();
-
-        expect(model.foo).toBe("foo3");
-        expect(model.bar).toBe("bar3");
-        expect(model.revision).toBe(3);
-    });
-});

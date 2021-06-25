@@ -1,5 +1,11 @@
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
 
+/** Defines options for the async queue. */
+export interface IAsyncQueueOptions {
+    /** True if the queue should process tasks concurrently; otherwise, tasks are processed sequentially. The default is false. */
+    readonly isConcurrent?: boolean;
+}
+
 export interface IAsyncTask<T> {
     (): Promise<T>;
 }
@@ -21,27 +27,46 @@ function createConcurrentScheduler<T>(): IQueueScheduler<T> {
 }
 
 function createSequentialScheduler<T>(): IQueueScheduler<T> {
-    let next: { readonly promise: Promise<T>, readonly done: () => boolean };
+    let next: { readonly promise: Promise<T>, readonly done: () => boolean } = {
+        promise: Promise.resolve(<any>undefined),
+        done: () => true
+    };
 
     return task => {
         let isCanceled = false;
         let isDone = false;
 
-        const start = async (resolve: (value: T | PromiseLike<T>) => void) => {
-            // - the await is so that the task is be completed before flagging as done
-            // - if canceled just resolve with no value and skip executing the task
-            isCanceled ? resolve(<any>undefined) : resolve(await task());
-            isDone = true;
+        const invokeTask = (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => {
+            if (isCanceled) {
+                // - if canceled just resolve with no value and skip executing the task
+                resolve(<any>undefined);
+                isDone = true;
+            }
+            else {
+                task()
+                    .then(value => {
+                        resolve(value);
+                        isDone = true;
+                    })
+                    .catch(err => {
+                        reject(err);
+                        isDone = true;
+                    });
+            }
         };
 
         // add to the chain only if the previous task has not completed
-        next = next === undefined || next.done()
-            ? { promise: new Promise(resolve => start(resolve)), done: () => isDone }
+        next = next.done()
+            ? { 
+                promise: new Promise((resolve, reject) => invokeTask(resolve, reject)), 
+                done: () => isDone 
+            }
             : {
-                promise: new Promise(resolve => {
-                    // start the next task regardless of the outcome of the previous task
-                    next.promise.then(() => start(resolve));
-                    next.promise.catch(() => start(resolve));
+                promise: new Promise((resolve, reject) => {
+                    // invoke the next task regardless of the outcome of the previous task
+                    next.promise
+                        .then(() => invokeTask(resolve, reject))
+                        .catch(() => invokeTask(resolve, reject));
                 }),
                 done: () => isDone
             };
@@ -62,8 +87,8 @@ export class AsyncQueue<T = void> {
 
     private _isAborted = false;
 
-    constructor(isConcurrent = false) {
-        this.scheduler = !isConcurrent ? createSequentialScheduler() : createConcurrentScheduler();
+    constructor(options?: IAsyncQueueOptions) {
+        this.scheduler = options && options.isConcurrent ? createConcurrentScheduler() : createSequentialScheduler();
     }
 
     get onIdle(): IEvent {
