@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-retry",
     "description": "A retry interceptor for the request client.",
-    "version": "0.1.60",
+    "version": "0.1.61",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,9 +21,9 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.1.60"
+        "@sprig/request-client": "0.1.61"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.1.60"
+        "@sprig/request-client-mock": "0.1.61"
     }
 }
