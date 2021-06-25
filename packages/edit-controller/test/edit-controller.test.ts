@@ -362,6 +362,4 @@ describe("edit controller", () => {
         expect(childModel!.value).toBe("value");
         expect(childModel!.revision).toBe(1);
     });
-
-    // TODO: create more tests....
 });

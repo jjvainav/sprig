@@ -337,13 +337,15 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
             });
         }
 
-        return Promise.resolve(handlers.apply(edit)).then(result => {
-            if (isApplyEditHandlerSuccess(result)) {
-                this.editApplied.emit(edit);
-            }
+        return Promise.resolve(handlers.apply(edit))
+            .then(result => {
+                if (isApplyEditHandlerSuccess(result)) {
+                    this.editApplied.emit(edit);
+                }
 
-            return result;
-        });
+                return result;
+            })
+            .catch(error => ({ success: false, error }));
     }
 
     private handleSubmitEdit(edit: IEditOperation): Promise<SubmitResult> {
