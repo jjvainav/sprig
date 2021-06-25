@@ -35,7 +35,7 @@ interface IItemModel extends IModel<IItemAttributes> {
 }
 
 class ItemModel extends Model<IItemAttributes> implements IItemModel {
-    value: string = "";
+    value: string;
 
     constructor(attributes: IItemAttributes) {
         super(attributes.id);
@@ -106,6 +106,18 @@ class TestModel extends Model<ITestAttributes> implements ITestModel {
 }
 
 describe("model with zod validation", () => {
+    test("validate new model", () => {
+        const model = new TestModel();
+
+        model.foo = "foo";
+        model.bar = "bar";
+
+        const result = model.validate();
+
+        expect(result).toBe(true);
+        expect(model.hasError()).toBe(false);
+    });
+
     test("validate with valid data", () => {
         const model = new TestModel({
             id: "123",
