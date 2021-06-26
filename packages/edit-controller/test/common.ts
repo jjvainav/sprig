@@ -3,7 +3,7 @@ import { EventEmitter } from "@sprig/event-emitter";
 import { Model, IModel, IModelValidation } from "@sprig/model";
 import { createValidation } from "@sprig/model-zod";
 import * as zod from "zod";
-import { ApplyResult, EditController, IEditDetails, IEditEventStream, IEditEventStreamConnection, IPublishEditResult, SubmitResult } from "../src";
+import { ApplyResult, EditController, IEditEventStream, IEditEventStreamConnection, IEditEventStreamData, IPublishEditResult, SubmitResult } from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -242,14 +242,14 @@ export class MockEditStore {
     }
 }
 
-/** A mock edit event stream; for the sake of simplicity the stream will push data using the IEditDetails format. */
-export class MockEditEventStream implements IEditEventStream<IEditDetails, Error> {
-    private readonly data = new EventEmitter<IEditDetails>("data");
+/** A mock edit event stream; for the sake of simplicity the stream will push data using the IEditEventStreamData format. */
+export class MockEditEventStream implements IEditEventStream {
+    private readonly data = new EventEmitter<IEditEventStreamData>("data");
 
     /** An error to return when attempting to open a stream to simulate a failed connection attempt. */
     connectionError?: Error;
 
-    openStream(): Promise<IEditEventStreamConnection<IEditDetails, Error>> {
+    openStream(): Promise<IEditEventStreamConnection> {
         return new Promise(resolve => setTimeout(() => {
             resolve({
                 error: this.connectionError,
@@ -262,12 +262,12 @@ export class MockEditEventStream implements IEditEventStream<IEditDetails, Error
     }
 
     /** Pushes an edit event onto the currently opened stream. This is useful for testing receiving events from a remote source/server. */
-    pushEvent(event: IEditDetails): Promise<void> {
-        return this.data.emit(event);
+    pushEvent(data: IEditEventStreamData): Promise<void> {
+        return this.data.emit(data);
     }
 }
 
-export class ChildController extends EditController<IChildModel, IEditDetails> {
+export class ChildController extends EditController<IChildModel> {
     modelType = "child";
 
     constructor(private readonly store: MockEditStore, model: IChildModel, parent: TestController) {
@@ -311,15 +311,11 @@ export class ChildController extends EditController<IChildModel, IEditDetails> {
     }
 }
 
-export class TestController extends EditController<ITestModel, IEditDetails> {
+export class TestController extends EditController<ITestModel> {
     modelType = "test";
 
-    constructor(
-        private readonly api: MockApi,
-        private readonly store: MockEditStore, 
-        model: ITestModel, 
-        stream: IEditEventStream<IEditDetails>) {
-        super(model, stream, { toEditDetails: data => data });
+    constructor(private readonly api: MockApi, private readonly store: MockEditStore, model: ITestModel, stream: IEditEventStream) {
+        super(model, stream);
 
         this.registerEditHandlers("addChild", {
             apply: this.applyAddChild.bind(this),

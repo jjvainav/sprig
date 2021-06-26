@@ -55,34 +55,24 @@ export interface IConnectStreamResult<TEventStreamError = any> {
 }
 
 /** Handles opening a stream of edit events with a remote source. */
-export interface IEditEventStream<TEventStreamData = any, TEventStreamError = any> {
+export interface IEditEventStream {
     /** Opens an event stream for receiving edit events from a remote source. */
-    openStream(): Promise<IEditEventStreamConnection<TEventStreamData, TEventStreamError>>;
+    openStream(): Promise<IEditEventStreamConnection>;
 }
 
-/** Handles translating data from the event stream into an IEditDetails object for the controller. */
-export interface IEditEventStreamAdapter<TEventStreamData = any> {
-    /** Converts the data received from the stream to an edit details object. */
-    toEditDetails(data: TEventStreamData): IEditDetails;
-}
-
-export interface IEditEventStreamConnection<TEventStreamData = any, TEventStreamError = any> {
-    /** An error that is expected to be provided if a connection failed to open. */
-    readonly error?: TEventStreamError;
+export interface IEditEventStreamConnection {
+    /** An error if a connection failed to open. */
+    readonly error?: any;
     /** True if the connection is currently open. */
     readonly isOpen: boolean;
-    /** An event that is raised when a connection attempt with the event stream has failed. */
-    //readonly onError: IEvent<IEventStreamError>;
     /** An event that is raised when data has been received from the stream. */
-    readonly onData: IEvent<TEventStreamData>;
-    /** An event that is raised when the connection has been opened. */
-    //readonly onOpen: IEvent;
+    readonly onData: IEvent<IEditEventStreamData>;
     /** Forces a stream to close. */
     close(): void;
 }
 
-/** Defines details about an edit and model it applies to. */
-export interface IEditDetails {
+/** Defines the data expected from an edit event stream. */
+export interface IEditEventStreamData {
     /** The id of the model the edit applies to. */
     readonly modelId: string;
     /** The type of model the edit applies to. */
@@ -203,7 +193,7 @@ function isSubmitEditHandlerSuccess(result: SubmitResult): result is ISubmitEdit
  * This also supports parent/child relationships via a shared event stream allowing the user of a single event stream
  * to pass events to a model and all it's children.
  */
-export abstract class EditController<TModel extends IModel = IModel, TEventStreamData = any, TEventStreamError = any> {
+export abstract class EditController<TModel extends IModel = IModel> {
     private readonly editApplied = new EventEmitter<IEditOperation>("edit-applied");
     private readonly handlers: { [editType: string]: EditHandlers<any> } = {};
 
@@ -215,8 +205,8 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
     abstract readonly modelType: string;
 
     constructor(model: TModel, parent: EditController);
-    constructor(model: TModel, stream: IEditEventStream<TEventStreamData, TEventStreamError>, adapter: IEditEventStreamAdapter<TEventStreamData>);
-    constructor(readonly model: TModel, streamOrParent: IEditEventStream<TEventStreamData, TEventStreamError> | EditController, adapter?: IEditEventStreamAdapter<TEventStreamData>) {
+    constructor(model: TModel, stream: IEditEventStream);
+    constructor(readonly model: TModel, streamOrParent: IEditEventStream | EditController) {
         if (model.isNew()) {
             throw new Error("Edit controller does not support new models.");
         }
@@ -224,7 +214,7 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
         // use the parent's queue since edit events are expected to come on the same stream
         this.editQueue = streamOrParent instanceof EditController
             ? streamOrParent.editQueue
-            : this.createPublishEditQueue(streamOrParent, adapter!);
+            : this.createPublishEditQueue(streamOrParent);
 
         this.synchronizer = new Synchronizer(
             this.model, 
@@ -286,7 +276,7 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
      * 
      * Note: this will not be invoked by child controllers; only the parent controller.
      */
-    protected handleCustomEvent(editDetails: IEditDetails): boolean {
+    protected handleCustomEditEvent(data: IEditEventStreamData): boolean {
         return false;
     }
 
@@ -296,20 +286,20 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
     }
 
     /** Handles an event received from the stream; the default behavior is to apply the edit to the current model or child model depending on the model type for the event. */
-    protected async handleEditEvent(editDetails: IEditDetails): Promise<void> {
-        if (this.modelType === editDetails.modelType && this.model.id === editDetails.modelId) {
+    protected async handleEditEvent(data: IEditEventStreamData): Promise<void> {
+        if (this.modelType === data.modelType && this.model.id === data.modelId) {
             // ignore edit unless the revision is greater
-            if (this.model.revision < editDetails.revision) {
+            if (this.model.revision < data.revision) {
                 // TODO: if the revision is not sequential should this sync instead of apply?
                 // TODO: what if the edit fails to apply? force a sync?
-                await this.applyEdit(editDetails.edit, editDetails.revision);
+                await this.applyEdit(data.edit, data.revision);
             }
         }
         else {
             // if the event is not for the model of the current controller look for a child controller to handle it
-            const child = this.getChildController(editDetails.modelType, editDetails.modelId);
+            const child = this.getChildController(data.modelType, data.modelId);
             if (child) {
-                await child.handleEditEvent(editDetails);
+                await child.handleEditEvent(data);
             }
         }
     }
@@ -365,7 +355,7 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
     }
 
     /** Gets a queue for applying and submitting edits while maintaining revision order. */
-    private createPublishEditQueue(stream: IEditEventStream<TEventStreamData, TEventStreamError>, adapter: IEditEventStreamAdapter<TEventStreamData>): IPublishEditQueue {
+    private createPublishEditQueue(stream: IEditEventStream): IPublishEditQueue {
         const root = this;
         return new class implements IPublishEditQueue {
             private readonly editContexts = new Map<IEditOperation, IPublishEditContext>();
@@ -376,7 +366,7 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
         
             private eventQueuePromise = Promise.resolve();
             private connectPromise?: Promise<IConnectStreamResult>;
-            private connection?: IEditEventStreamConnection<TEventStreamData, TEventStreamError>;
+            private connection?: IEditEventStreamConnection;
             private isClosed = false;
 
             applyEdit(model: IModel, edit: IEditOperation, syncModel: SyncModelCallback, apply: IApplyEditHandler, revision: number): Promise<IApplyEditResult> {
@@ -433,11 +423,10 @@ export abstract class EditController<TModel extends IModel = IModel, TEventStrea
                         // applying an edit is an asynchronous operation so use a queue to process events in order as they are received
                         // also capture the promise so that it can be used to wait for the queue to finish processing events
                         this.eventQueuePromise = this.eventQueue.push(async () => {
-                            // give the edit details to the root/parent controller to handle
+                            // give the event stream data to the root/parent controller to handle
                             // it is possible the server will send an edit before the original submit has
                             // had a chance to respond so wait for all pending submissions before processing the event
-                            const editDetails = adapter.toEditDetails(data);
-                            await this.waitForAllSubmits().then(() => root.handleEditEvent(editDetails));
+                            await this.waitForAllSubmits().then(() => root.handleEditEvent(data));
                         });
                     });
 
