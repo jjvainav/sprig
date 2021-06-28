@@ -1,7 +1,7 @@
 {
     "name": "@sprig/random-string",
     "description": "Node.js package for generating cryptographic random strings.",
-    "version": "0.1.63",
+    "version": "0.1.64",
     "license": "MIT",
     "repository": {
         "type": "git",

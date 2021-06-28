@@ -1,6 +1,6 @@
 {
     "name": "@sprig/edit-store",
-    "version": "0.1.63",
+    "version": "0.1.64",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -20,8 +20,8 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/edit-operation": "0.1.63",
-        "@sprig/immutable-collection": "0.1.63",
-        "@sprig/store": "0.1.63"
+        "@sprig/edit-operation": "0.1.64",
+        "@sprig/immutable-collection": "0.1.64",
+        "@sprig/store": "0.1.64"
     }
 }
