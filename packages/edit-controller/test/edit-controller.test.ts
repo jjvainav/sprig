@@ -11,14 +11,20 @@ interface ITestContext {
     createChild(value: string): IChild; 
 }
 
+interface ITestContextOptions {
+    readonly api?: MockApi;
+    readonly store?: MockEditStore;
+    readonly stream?: MockEditEventStream;
+}
+
 let nextId = 100;
-function createTestContext(): ITestContext {
+function createTestContext(options?: ITestContextOptions): ITestContext {
     // the api is used to simulate fetching resource/model objects from a server
-    const api = new MockApi();
+    const api = options && options.api || new MockApi();
     // the store is used to store edits for resources/models
-    const store = new MockEditStore();
+    const store = options && options.store || new MockEditStore();
     // the stream is used to simulate pushing events from the server to the client
-    const stream = new MockEditEventStream();
+    const stream = options && options.stream || new MockEditEventStream();
 
     const id = (nextId++).toString();
     const model = new TestModel({ id, items: [], revision: 1 });
@@ -361,5 +367,82 @@ describe("edit controller", () => {
         expect(childModel!.id).toBe(child.id);
         expect(childModel!.value).toBe("value");
         expect(childModel!.revision).toBe(1);
+    });
+
+    test("receive an edit event from the stream for multiple instances sharing the same stream", async () => {
+        const context = createTestContext();
+        const contexts = [
+            context,
+            createTestContext(context),
+            createTestContext(context),
+            createTestContext(context)
+        ];
+
+        // each controller needs to manually connect to the stream
+        await Promise.all(contexts.map(context => context.controller.connectStream()));
+
+        // simulate saving an edit for the model of the first context and push it from the server to the client
+        const edit = Edits.createUpdateTestEdit("foo", "bar");
+        const revision = context.store.addEdit(context.controller.modelType, context.controller.model.id, edit);
+
+        // just in case, wait for the stream to finish pushing the event otherwise the controller may still be in an idle state
+        await context.stream.pushEvent({ 
+            modelType: context.controller.modelType,
+            modelId: context.controller.model.id,
+            edit,
+            revision
+        });
+
+        await context.controller.waitForIdle();
+
+        expect(context.stream.getNumberOfConnectedInstances()).toBe(4);
+        expect(contexts[0].controller.model.foo).toBe("foo");
+        expect(contexts[0].controller.model.bar).toBe("bar");
+        expect(contexts[1].controller.model.foo).toBeUndefined();
+        expect(contexts[1].controller.model.bar).toBeUndefined();
+        expect(contexts[2].controller.model.foo).toBeUndefined();
+        expect(contexts[2].controller.model.bar).toBeUndefined();
+        expect(contexts[3].controller.model.foo).toBeUndefined();
+        expect(contexts[3].controller.model.bar).toBeUndefined();
+    });
+
+    test("receive an edit event from the stream for multiple instances sharing the same stream after disconnecting", async () => {
+        const context = createTestContext();
+        const contexts = [
+            context,
+            createTestContext(context),
+            createTestContext(context),
+            createTestContext(context)
+        ];
+
+        // each controller needs to manually connect to the stream
+        await Promise.all(contexts.map(context => context.controller.connectStream()));
+
+        // simulate saving an edit for the model of the first context and push it from the server to the client
+        const edit = Edits.createUpdateTestEdit("foo", "bar");
+        const revision = context.store.addEdit(context.controller.modelType, context.controller.model.id, edit);
+
+        // disconnect from the stream before pushing the event
+        context.controller.disconnectStream();
+
+        // just in case, wait for the stream to finish pushing the event otherwise the controller may still be in an idle state
+        await context.stream.pushEvent({ 
+            modelType: context.controller.modelType,
+            modelId: context.controller.model.id,
+            edit,
+            revision
+        });
+
+        await context.controller.waitForIdle();
+
+        expect(context.stream.getNumberOfConnectedInstances()).toBe(3);
+        expect(contexts[0].controller.model.foo).toBeUndefined();
+        expect(contexts[0].controller.model.bar).toBeUndefined();
+        expect(contexts[1].controller.model.foo).toBeUndefined();
+        expect(contexts[1].controller.model.bar).toBeUndefined();
+        expect(contexts[2].controller.model.foo).toBeUndefined();
+        expect(contexts[2].controller.model.bar).toBeUndefined();
+        expect(contexts[3].controller.model.foo).toBeUndefined();
+        expect(contexts[3].controller.model.bar).toBeUndefined();
     });
 });

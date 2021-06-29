@@ -1,6 +1,6 @@
 import { AsyncQueue } from "@sprig/async-queue";
 import { IEditOperation } from "@sprig/edit-operation";
-import { EventEmitter, IEvent } from "@sprig/event-emitter";
+import { EventEmitter, IEvent, IEventListener } from "@sprig/event-emitter";
 import { IModel } from "@sprig/model";
 import { Synchronizer } from "./synchronizer";
 
@@ -56,19 +56,21 @@ export interface IConnectStreamResult<TEventStreamError = any> {
 
 /** Handles opening a stream of edit events with a remote source. */
 export interface IEditEventStream {
-    /** Opens an event stream for receiving edit events from a remote source. */
-    openStream(): Promise<IEditEventStreamConnection>;
+    /** Connects to an event stream for receiving edit events from a remote source. */
+    connect(): Promise<IEditEventStreamConnection | IEditEventStreamConnectionError>;
 }
 
+/** Represents an open edit event stream connection. */
 export interface IEditEventStreamConnection {
-    /** An error if a connection failed to open. */
-    readonly error?: any;
-    /** True if the connection is currently open. */
-    readonly isOpen: boolean;
     /** An event that is raised when data has been received from the stream. */
     readonly onData: IEvent<IEditEventStreamData>;
-    /** Forces a stream to close. */
-    close(): void;
+    /** Disconnects from the stream. */
+    disconnect(): void;
+}
+
+/** Represents an error for a failed edit event stream connection attempt. */
+export interface IEditEventStreamConnectionError {
+    readonly error: any;
 }
 
 /** Defines the data expected from an edit event stream. */
@@ -177,6 +179,10 @@ function isApplyEditHandlerSuccess(result: ApplyResult): result is IApplyEditHan
 
 function isSubmitEditHandlerSuccess(result: SubmitResult): result is ISubmitEditHandlerSuccess {
     return (<ISubmitEditHandlerSuccess>result).success;
+}
+
+function isEventStreamError(result: IEditEventStreamConnection | IEditEventStreamConnectionError): result is IEditEventStreamConnectionError {
+    return (<IEditEventStreamConnectionError>result).error !== undefined;
 }
 
 /** 
@@ -367,6 +373,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
             private eventQueuePromise = Promise.resolve();
             private connectPromise?: Promise<IConnectStreamResult>;
             private connection?: IEditEventStreamConnection;
+            private connectionListener?: IEventListener;
             private isClosed = false;
 
             applyEdit(model: IModel, edit: IEditOperation, syncModel: SyncModelCallback, apply: IApplyEditHandler, revision: number): Promise<IApplyEditResult> {
@@ -409,17 +416,13 @@ export abstract class EditController<TModel extends IModel = IModel> {
                     return this.connectPromise;
                 }
 
-                this.connectPromise = stream.openStream().then(connection => {
-                    if (!connection.isOpen) {
-                        if (!connection.error) {
-                            throw new Error("An error is expected when a connection fails.");
-                        }
-
+                this.connectPromise = stream.connect().then(connection => {
+                    if (isEventStreamError(connection)) {
                         return { success: false, error: connection.error };
                     }
 
                     this.connection = connection;
-                    this.connection.onData(data => {
+                    this.connectionListener = this.connection.onData(data => {
                         // applying an edit is an asynchronous operation so use a queue to process events in order as they are received
                         // also capture the promise so that it can be used to wait for the queue to finish processing events
                         this.eventQueuePromise = this.eventQueue.push(async () => {
@@ -465,8 +468,13 @@ export abstract class EditController<TModel extends IModel = IModel> {
             }
         
             disconnect(): void {
+                if (this.connectionListener) {
+                    this.connectionListener.remove();
+                    this.connectionListener = undefined;
+                }
+
                 if (this.connection) {
-                    this.connection.close();
+                    this.connection.disconnect();
                     this.connection = undefined;
                     this.isClosed = true;
                 }

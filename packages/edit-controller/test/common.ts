@@ -3,7 +3,10 @@ import { EventEmitter } from "@sprig/event-emitter";
 import { Model, IModel, IModelValidation } from "@sprig/model";
 import { createValidation } from "@sprig/model-zod";
 import * as zod from "zod";
-import { ApplyResult, EditController, IEditEventStream, IEditEventStreamConnection, IEditEventStreamData, IPublishEditResult, SubmitResult } from "../src";
+import { 
+    ApplyResult, EditController, IEditEventStream, IEditEventStreamConnection, IEditEventStreamConnectionError, 
+    IEditEventStreamData, IPublishEditResult, SubmitResult 
+} from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -245,25 +248,51 @@ export class MockEditStore {
 /** A mock edit event stream; for the sake of simplicity the stream will push data using the IEditEventStreamData format. */
 export class MockEditEventStream implements IEditEventStream {
     private readonly data = new EventEmitter<IEditEventStreamData>("data");
+    private instances = 0;
+
+    /** The current connection for the stream if it is open. */
+    connection?: IEditEventStreamConnection;
 
     /** An error to return when attempting to open a stream to simulate a failed connection attempt. */
     connectionError?: Error;
 
-    openStream(): Promise<IEditEventStreamConnection> {
+    connect(): Promise<IEditEventStreamConnection | IEditEventStreamConnectionError> {
+        if (this.connectionError) {
+            return Promise.resolve({ error: this.connectionError });
+        }
+
+        if (this.connection) {
+            this.instances++;
+            return Promise.resolve(this.connection);
+        }
+
         return new Promise(resolve => setTimeout(() => {
-            resolve({
-                error: this.connectionError,
-                isOpen: !this.connectionError,
-                onData: this.data.event,
-                close: () => {}
-            });
+            this.instances++;
+            this.connection = this.connection || this.createConnection();
+            resolve(this.connection);
         },
         0));
+    }
+
+    getNumberOfConnectedInstances(): number {
+        return this.instances;
     }
 
     /** Pushes an edit event onto the currently opened stream. This is useful for testing receiving events from a remote source/server. */
     pushEvent(data: IEditEventStreamData): Promise<void> {
         return this.data.emit(data);
+    }
+
+    private createConnection(): IEditEventStreamConnection {
+        return {
+            onData: this.data.event,
+            disconnect: () => { 
+                this.instances--; 
+                if (!this.instances) {
+                    this.connection = undefined;
+                }
+            }
+        };
     }
 }
 
