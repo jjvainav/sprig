@@ -47,7 +47,7 @@ export interface IEventStreamEmitterOptions<TData> extends IEventStreamOptions {
 
 /** 
  * Defines the events for a server-sent event stream. Note: a stream will automatically
- * close close when all onMessage listeners are unregistered.
+ * close when all onMessage listeners are unregistered.
  */
 export interface IRequestEventStream<TData = any> {
     /** An event that is raised when the event stream has been closed after a connection has been opened. */
@@ -56,7 +56,10 @@ export interface IRequestEventStream<TData = any> {
     readonly onError: IEvent<IEventStreamError>;
     /** An event that is raised when invalid data was recieved. */
     readonly onInvalidData: IEvent<IInvalidDataEvent>;
-    /** An event that is raised when a message has been received. */
+    /** 
+     * An event that is raised when a message has been received. Note: a stream will automatically
+     * close when all onMessage listeners are unregistered.
+     */
     readonly onMessage: IEvent<IMessageEvent<TData>>;
     /** An event that is raised after a connection has been opened. */
     readonly onOpen: IEvent;

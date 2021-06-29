@@ -173,16 +173,16 @@ interface IPublishEditContext {
     readonly resolve: (result: ISubmitEditResult) => void;
 }
 
+export function isEventStreamError(result: IEditEventStreamConnection | IEditEventStreamConnectionError): result is IEditEventStreamConnectionError {
+    return (<IEditEventStreamConnectionError>result).error !== undefined;
+}
+
 function isApplyEditHandlerSuccess(result: ApplyResult): result is IApplyEditHandlerSuccess {
     return (<IApplyEditHandlerSuccess>result).success;
 }
 
 function isSubmitEditHandlerSuccess(result: SubmitResult): result is ISubmitEditHandlerSuccess {
     return (<ISubmitEditHandlerSuccess>result).success;
-}
-
-function isEventStreamError(result: IEditEventStreamConnection | IEditEventStreamConnectionError): result is IEditEventStreamConnectionError {
-    return (<IEditEventStreamConnectionError>result).error !== undefined;
 }
 
 /** 
@@ -212,6 +212,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
 
     constructor(model: TModel, parent: EditController);
     constructor(model: TModel, stream: IEditEventStream);
+    constructor(model: TModel, streamOrParent: IEditEventStream | EditController);
     constructor(readonly model: TModel, streamOrParent: IEditEventStream | EditController) {
         if (model.isNew()) {
             throw new Error("Edit controller does not support new models.");
