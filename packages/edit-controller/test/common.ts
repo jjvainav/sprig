@@ -1,12 +1,9 @@
 import { IEditOperation } from "@sprig/edit-operation";
-import { EventEmitter } from "@sprig/event-emitter";
+import { EventEmitter, IEvent } from "@sprig/event-emitter";
 import { Model, IModel, IModelValidation } from "@sprig/model";
 import { createValidation } from "@sprig/model-zod";
 import * as zod from "zod";
-import { 
-    ApplyResult, EditController, IEditEventStream, IEditEventStreamConnection, IEditEventStreamConnectionError, 
-    IEditEventStreamData, IPublishEditResult, SubmitResult 
-} from "../src";
+import { ApplyResult, EditController, IEditEventStream, IEditEventStreamData, IPublishEditQueue, IPublishEditResult, SubmitResult } from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -69,16 +66,16 @@ export interface IAddItem extends IEditOperation {
     };
 }
 
-export interface ICreateTest extends IEditOperation {
-    readonly type: "create";
+export interface IInitTest extends IEditOperation {
+    readonly type: "init";
     readonly data: {
         readonly foo?: string;
         readonly bar?: string;
     };
 }
 
-export interface ICreateChild extends IEditOperation {
-    readonly type: "create";
+export interface IInitChild extends IEditOperation {
+    readonly type: "init";
     readonly data: {
         readonly value: string;
     };
@@ -247,52 +244,26 @@ export class MockEditStore {
 
 /** A mock edit event stream; for the sake of simplicity the stream will push data using the IEditEventStreamData format. */
 export class MockEditEventStream implements IEditEventStream {
-    private readonly data = new EventEmitter<IEditEventStreamData>("data");
-    private instances = 0;
-
-    /** The current connection for the stream if it is open. */
-    connection?: IEditEventStreamConnection;
-
-    /** An error to return when attempting to open a stream to simulate a failed connection attempt. */
-    connectionError?: Error;
-
-    connect(): Promise<IEditEventStreamConnection | IEditEventStreamConnectionError> {
-        if (this.connectionError) {
-            return Promise.resolve({ error: this.connectionError });
+    private readonly data = new class extends EventEmitter<IEditEventStreamData> {
+        get connectionCount(): number {
+            return this.count;
         }
+    }();
 
-        if (this.connection) {
-            this.instances++;
-            return Promise.resolve(this.connection);
-        }
-
-        return new Promise(resolve => setTimeout(() => {
-            this.instances++;
-            this.connection = this.connection || this.createConnection();
-            resolve(this.connection);
-        },
-        0));
+    get onData(): IEvent<IEditEventStreamData> {
+        return this.data.event;
     }
 
-    getNumberOfConnectedInstances(): number {
-        return this.instances;
+    get connectionCount(): number { 
+        return this.data.connectionCount;
     }
 
-    /** Pushes an edit event onto the currently opened stream. This is useful for testing receiving events from a remote source/server. */
     pushEvent(data: IEditEventStreamData): Promise<void> {
-        return this.data.emit(data);
-    }
-
-    private createConnection(): IEditEventStreamConnection {
-        return {
-            onData: this.data.event,
-            disconnect: () => { 
-                this.instances--; 
-                if (!this.instances) {
-                    this.connection = undefined;
-                }
-            }
-        };
+        return new Promise(resolve => setTimeout(() => {
+            this.data.emit(data);
+            resolve();
+        }, 
+        0));
     }
 }
 
@@ -343,8 +314,8 @@ export class ChildController extends EditController<IChildModel> {
 export class TestController extends EditController<ITestModel> {
     modelType = "test";
 
-    constructor(private readonly api: MockApi, private readonly store: MockEditStore, model: ITestModel, stream: IEditEventStream) {
-        super(model, stream);
+    constructor(private readonly api: MockApi, private readonly store: MockEditStore, model: ITestModel, streamOrQueue: IEditEventStream | IPublishEditQueue) {
+        super(model, streamOrQueue);
 
         this.registerEditHandlers("addChild", {
             apply: this.applyAddChild.bind(this),
@@ -399,20 +370,18 @@ export class TestController extends EditController<ITestModel> {
         0));
     }
 
-    protected getChildController(modelType: string, modelId: string): EditController | undefined {
-        if (modelType !== "child") {
-            throw new Error("Model type not expected.");
-        }
-
-        if (this.model.children) {
-            for (const child of this.model.children) {
-                if (child.id === modelId) {
-                    return new ChildController(this.store, child, this);
+    protected getController(data: IEditEventStreamData): EditController | undefined {
+        if (data.modelType === "child") {
+            if (this.model.children) {
+                for (const child of this.model.children) {
+                    if (child.id === data.modelId) {
+                        return new ChildController(this.store, child, this);
+                    }
                 }
             }
         }
 
-        return undefined;
+        return this;
     }
 
     private async applyAddChild(edit: IAddChild): Promise<ApplyResult<IRemoveChild>> {

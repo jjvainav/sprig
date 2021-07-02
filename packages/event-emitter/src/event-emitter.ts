@@ -150,8 +150,8 @@ export class EventEmitter<TArgs = void> {
 
     readonly event: IEvent<TArgs>;
 
-    constructor(name: string, options?: IEventEmitterOptions) {
-        this.event = createEvent(name, callback => {
+    constructor(name?: string, options?: IEventEmitterOptions) {
+        this.event = createEvent(name || "emitter", callback => {
             if (this.callbacks === undefined) {
                 this.callbacks = [];
             }

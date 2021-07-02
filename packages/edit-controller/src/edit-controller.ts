@@ -46,31 +46,10 @@ export interface IApplyEditResult {
     readonly reverse?: IEditOperation;
 }
 
-/** Defines the result from connection to an edit event stream. */
-export interface IConnectStreamResult<TEventStreamError = any> {
-    /** True if the connection was openned successfully. */
-    readonly success: boolean;
-    /** An error describing the reason for a failed connection. */
-    readonly error?: TEventStreamError;
-}
-
-/** Handles opening a stream of edit events with a remote source. */
+/** Represents an edit event stream. */
 export interface IEditEventStream {
-    /** Connects to an event stream for receiving edit events from a remote source. */
-    connect(): Promise<IEditEventStreamConnection | IEditEventStreamConnectionError>;
-}
-
-/** Represents an open edit event stream connection. */
-export interface IEditEventStreamConnection {
     /** An event that is raised when data has been received from the stream. */
     readonly onData: IEvent<IEditEventStreamData>;
-    /** Disconnects from the stream. */
-    disconnect(): void;
-}
-
-/** Represents an error for a failed edit event stream connection attempt. */
-export interface IEditEventStreamConnectionError {
-    readonly error: any;
 }
 
 /** Defines the data expected from an edit event stream. */
@@ -133,27 +112,23 @@ export interface ISubmitEditHandlerFail {
 }
 
 /** Defines a queue for applying and submitting edits while maintaining revision order. */
-interface IPublishEditQueue {
-    /** Manually apply an edit against a model (but does not submit) and associate the specified revision number. */
-    applyEdit(model: IModel, edit: IEditOperation, syncModel: SyncModelCallback, apply: IApplyEditHandler, revision: number): Promise<IApplyEditResult>;
-    /** Connects the edit queue with a remote edit event stream to listen for an add edit events to the queue as they are received. */
-    connectStream(): Promise<IConnectStreamResult>;
+export interface IPublishEditQueue {
     /** Creates a channel for publishing edits. */
     createChannel(options: IPublishEditChannelOptions): IPublishEditChannel;
-    /** Disconnects the edit queue from the remote server. */
-    disconnect(): void;
-    /** Returns a promise to wait for the given edit to be submitted; returns undefined if the edit has already been submitted or a submission was not found. */
-    tryWaitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult | undefined>;
+    /** Connects the queue to the edit event stream. */
+    connectStream(): void;
+    /** Disconnects the queue from the edit event stream. */
+    disconnectStream(): void;
     /** Returns a promise that will wait for all submit processes to complete. */
     waitForAllSubmits(): Promise<void>;
     /** Returns a promise to wait for the queue to be completely idle; this will wait for all pending edits to be applied and submitted as well as wait for any received edit events to be processed as well. */
     waitForIdle(): Promise<void>;
-    /** Returns a promise to wait for the given edit to be submitted; throws an error if the submission for the edit could not be found. */
-    waitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult>;
+    /** Returns a promise to wait for the given edit to be submitted or returns undefined if the edit has already been submitted or a submission was not found. */
+    waitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult | undefined>;
 }
 
 /** Defines the options needed to create a publish edit channel. */
-interface IPublishEditChannelOptions {
+export interface IPublishEditChannelOptions {
     readonly model: IModel;
     readonly syncModel: SyncModelCallback;
     readonly apply: IApplyEditHandler;
@@ -161,8 +136,13 @@ interface IPublishEditChannelOptions {
 }
 
 /** Defines a channel to the publish edit queue for pushing edits. */
-interface IPublishEditChannel {
+export interface IPublishEditChannel {
     push(edit: IEditOperation): Promise<IPublishEditResult>;
+}
+
+/** Handles an edit event from the stream or optionally return an edit controller to forward the event for handling. */
+export interface IEditEventStreamHandler {
+    (data: IEditEventStreamData): EditController | undefined | void;
 }
 
 /** Maintains the state for an edit while publishing (e.g. apply and submit process). */
@@ -173,10 +153,6 @@ interface IPublishEditContext {
     readonly resolve: (result: ISubmitEditResult) => void;
 }
 
-export function isEventStreamError(result: IEditEventStreamConnection | IEditEventStreamConnectionError): result is IEditEventStreamConnectionError {
-    return (<IEditEventStreamConnectionError>result).error !== undefined;
-}
-
 function isApplyEditHandlerSuccess(result: ApplyResult): result is IApplyEditHandlerSuccess {
     return (<IApplyEditHandlerSuccess>result).success;
 }
@@ -185,22 +161,22 @@ function isSubmitEditHandlerSuccess(result: SubmitResult): result is ISubmitEdit
     return (<ISubmitEditHandlerSuccess>result).success;
 }
 
+function isPublishEditQueue(streamQueueOrParent: IEditEventStream | IPublishEditQueue | EditController): streamQueueOrParent is IPublishEditQueue {
+    return (<IPublishEditQueue>streamQueueOrParent).createChannel !== undefined;
+}
+
 /** 
- * Controls applying and synchronizing edits for a model (and its children) with a remote server using event streams and edit operations. 
+ * Controls applying and synchronizing edits for a model with a remote source using event streams and edit operations. 
  * 
- * The process involves applying an edit to the model and submitting it to the remote server; combined, this is refered to as publishing an edit.
- * To improve UI feedback, edits are first applied to the model and then submitted to the server. The controller will then handle
- * failures (e.g. automatically apply the reverse to rollback the edit).
+ * Publising an edit involves applying it to the model and submitting it to a remote server.
+ * In order to support immediate feedback, edits are first applied and then submitted in the background. 
+ * Note, failures during the submission will automatically be rolled back by applying a reverse edit.
  * 
- * The controller also manages synchronizing edits by listening for events from the server via event streams. The model
- * has a revision number that is used to help keep it in sync with the server; if at any time the model gets out of
- * sync the controller will fetch missing edits from the server and get it back in sync.
- * 
- * This also supports parent/child relationships via a shared event stream allowing the user of a single event stream
- * to pass events to a model and all it's children.
+ * The controller also manages synchronizing edits if the model's revision is not in sync and also listens for edits from an event stream. 
+ * If at any time the model's revision number gets out of sync the controller will fetch missing edits from the server and get it back in sync.
  */
 export abstract class EditController<TModel extends IModel = IModel> {
-    private readonly editApplied = new EventEmitter<IEditOperation>("edit-applied");
+    private readonly editApplied = new EventEmitter<IEditOperation>();
     private readonly handlers: { [editType: string]: EditHandlers<any> } = {};
 
     private readonly editQueue: IPublishEditQueue;
@@ -210,18 +186,32 @@ export abstract class EditController<TModel extends IModel = IModel> {
     /** The model type the controller is responsible for and is expected to be the model type for an edit event. */
     abstract readonly modelType: string;
 
-    constructor(model: TModel, parent: EditController);
+    /** 
+     * Creates a new edit controller using the specified stream. The edit controller will maintain its own queue for
+     * publishing, submitting, and syncing edits. This is useful when a stream of events will only apply to the
+     * model the controller references (or its children). The controller will automatically connect to the stream
+     * when created.
+     */
     constructor(model: TModel, stream: IEditEventStream);
-    constructor(model: TModel, streamOrParent: IEditEventStream | EditController);
-    constructor(readonly model: TModel, streamOrParent: IEditEventStream | EditController) {
+    /** Creates a new edit controller using the specified queue. */
+    constructor(model: TModel, queue: IPublishEditQueue);
+    /**
+     * Creates a new edit controller whose model is the child of root aggregate allowing the constructed controller
+     * to share the same edit queue and underlying edit event stream.
+     */
+    constructor(model: TModel, parent: EditController);
+    constructor(model: TModel, streamQueueOrParent: IEditEventStream | IPublishEditQueue | EditController);
+    constructor(readonly model: TModel, streamQueueOrParent: IEditEventStream | IPublishEditQueue | EditController) {
         if (model.isNew()) {
             throw new Error("Edit controller does not support new models.");
         }
 
         // use the parent's queue since edit events are expected to come on the same stream
-        this.editQueue = streamOrParent instanceof EditController
-            ? streamOrParent.editQueue
-            : this.createPublishEditQueue(streamOrParent);
+        this.editQueue = streamQueueOrParent instanceof EditController
+            ? streamQueueOrParent.editQueue
+            : isPublishEditQueue(streamQueueOrParent)
+                ? streamQueueOrParent
+                : new PublishEditQueue(streamQueueOrParent, data => this.getController(data));
 
         this.synchronizer = new Synchronizer(
             this.model, 
@@ -241,14 +231,14 @@ export abstract class EditController<TModel extends IModel = IModel> {
         return this.editApplied.event;
     }
 
-    /** Connects to the edit event stream for listening to edits sent by remote source. */
-    connectStream(): Promise<IConnectStreamResult> {
-        return this.editQueue.connectStream();
+    /** Connects the edit queue to the event stream. Note, this will effect all controllers sharing the same edit queue. */
+    connectStream(): void {
+        this.editQueue.connectStream();
     }
 
-    /** Disconnects the edit stream. */
+    /** Disconnects the edit queue from the event stream. Note, this will effect all controllers sharing the same edit queue. */
     disconnectStream(): void {
-        this.editQueue.disconnect();
+        this.editQueue.disconnectStream();
     }
 
     /** Returns a promise to wait for all pending edits to be applied and submitted; note, this will not wait for edits that were received via the stream. */
@@ -261,38 +251,57 @@ export abstract class EditController<TModel extends IModel = IModel> {
         return this.editQueue.waitForIdle();
     }
 
+    /** Returns a promise that will wait for the specified edit to be submitted. */
     waitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult | undefined> {
-        return this.editQueue.tryWaitForSubmit(edit);
+        return this.editQueue.waitForSubmit(edit);
     }
 
     /** Fetches new edits for the current model starting at the specified revision number. */
     protected abstract fetchEdits(startRevision?: number): Promise<IEditOperation[]>;
 
-    /** 
-     * Gets the child controller with the specified model id or undefined if not found. 
-     * Note: parent controllers are responsible for handling this logic.
-     */
-    protected getChildController(modelType: string, modelId: string): EditController | undefined {
-        return undefined;
-    }
-
-    /** 
-     * A custom edit event message handler; return true if the message was handled otherwise false. 
-     * This allows the controller to process/handle messages from the stream before applying them
-     * to the model. If this returns true, the event will be ignored and not applied to the model.
-     * 
-     * Note: this will not be invoked by child controllers; only the parent controller.
-     */
-    protected handleCustomEditEvent(data: IEditEventStreamData): boolean {
-        return false;
-    }
-
     /** Manually apply an edit against a model (but does not submit) and associate the specified revision number. */
     protected applyEdit(edit: IEditOperation, revision: number): Promise<IApplyEditResult> {
-        return this.editQueue.applyEdit(this.model, edit, () => this.synchronizer.synchronize(), edit => this.handleApplyEdit(edit), revision);
+        // create a separate channel so that will simply return success for the submission, this will skip the submission step
+        const channel = this.editQueue.createChannel({ 
+            model: this.model,
+            syncModel: () => this.synchronizer.synchronize(), 
+            apply: edit => this.handleApplyEdit(edit), 
+            submit: () => Promise.resolve({ success: true, revision }) 
+        });
+
+        // when the apply fails attempt to sync the model and return an unsuccessful result
+        const syncOnFail = () => this.synchronizer.synchronize().then(() => ({ success: false, edit }));
+
+        // revisions are expected to be in sequential order; otherwise, force a sync without applying the edit
+        if (this.model.revision + 1 !== revision) {
+            return syncOnFail();
+        }
+
+        return channel.push(edit).then(async result => {
+            if (result.success) {
+                // if successful wait for the submission to finish so that we can get the reverse edit (this is expected to always succeed)
+                const submitResult = await result.waitForSubmit;
+                return { success: submitResult.success, edit, reverse: submitResult.reverse };
+            }
+            
+            // if we fail, attempt to synchronize the model
+            return await syncOnFail();
+        });
     }
 
-    /** Handles an event received from the stream; the default behavior is to apply the edit to the current model or child model depending on the model type for the event. */
+    /** 
+     * Gets the controller to handle the specified edit event; by default, the current controller is returned. 
+     * This is useful when the controller child models and can provide a different controller
+     * to handle the event.
+     */
+    protected getController(data: IEditEventStreamData): EditController | undefined {
+        return this;
+    }
+
+    /** 
+     * Handles an event received from the stream; the default behavior is to check if the data is for the current model and 
+     * then apply the edit. Subclasses can override this to provide additional handling as needed.
+     */
     protected async handleEditEvent(data: IEditEventStreamData): Promise<void> {
         if (this.modelType === data.modelType && this.model.id === data.modelId) {
             // ignore edit unless the revision is greater
@@ -300,13 +309,6 @@ export abstract class EditController<TModel extends IModel = IModel> {
                 // TODO: if the revision is not sequential should this sync instead of apply?
                 // TODO: what if the edit fails to apply? force a sync?
                 await this.applyEdit(data.edit, data.revision);
-            }
-        }
-        else {
-            // if the event is not for the model of the current controller look for a child controller to handle it
-            const child = this.getChildController(data.modelType, data.modelId);
-            if (child) {
-                await child.handleEditEvent(data);
             }
         }
     }
@@ -360,226 +362,165 @@ export abstract class EditController<TModel extends IModel = IModel> {
 
         return handlers.submit(edit);
     }
+}
 
-    /** Gets a queue for applying and submitting edits while maintaining revision order. */
-    private createPublishEditQueue(stream: IEditEventStream): IPublishEditQueue {
-        const root = this;
-        return new class implements IPublishEditQueue {
-            private readonly editContexts = new Map<IEditOperation, IPublishEditContext>();
-            private readonly submissions = new Set<Promise<ISubmitEditResult>>();
-        
-            private readonly publishQueue = new AsyncQueue<IPublishEditResult>();
-            private readonly eventQueue = new AsyncQueue();
-        
-            private eventQueuePromise = Promise.resolve();
-            private connectPromise?: Promise<IConnectStreamResult>;
-            private connection?: IEditEventStreamConnection;
-            private connectionListener?: IEventListener;
-            private isClosed = false;
+export class PublishEditQueue implements IPublishEditQueue {
+    private readonly editContexts = new Map<IEditOperation, IPublishEditContext>();
+    private readonly submissions = new Set<Promise<ISubmitEditResult>>();
 
-            applyEdit(model: IModel, edit: IEditOperation, syncModel: SyncModelCallback, apply: IApplyEditHandler, revision: number): Promise<IApplyEditResult> {
-                // create a separate channel so that will simply return success for the submission, this will skip the submission step
-                const submit = () => Promise.resolve({ success: true, revision });
-                const channel = this.createChannel({ model, syncModel, apply, submit });
+    private readonly publishQueue = new AsyncQueue<IPublishEditResult>();
+    private readonly eventQueue = new AsyncQueue();
 
-                // when the apply fails attempt to sync the model and return an unsuccessful result
-                const syncOnFail = () => syncModel().then(() => ({ success: false, edit }));
-        
-                // revisions are expected to be in sequential order; otherwise, force a sync without applying the edit
-                if (model.revision + 1 !== revision) {
-                    return syncOnFail();
-                }
-        
-                return channel.push(edit).then(async result => {
-                    if (result.success) {
-                        // if successful wait for the submission to finish so that we can get the reverse edit (this is expected to always succeed)
-                        const submitResult = await result.waitForSubmit;
-                        return { success: submitResult.success, edit, reverse: submitResult.reverse };
-                    }
-                    
-                    // if we fail, attempt to synchronize the model
-                    return await syncOnFail();
-                });
-            }
-        
-            connectStream(): Promise<IConnectStreamResult> {
-                if (this.connection) {
-                    // the stream is already connected
-                    return Promise.resolve({ success: true });
-                }
+    private eventQueuePromise = Promise.resolve();
+    private streamListener?: IEventListener;
 
-                if (this.isClosed) {
-                    throw new Error("The stream has already been closed.");
-                }
+    constructor(
+        private readonly stream: IEditEventStream, 
+        private readonly streamHandler: IEditEventStreamHandler) {
+        this.connectStream();
+    }
 
-                if (this.connectPromise) {
-                    // already in the process of connecting
-                    return this.connectPromise;
-                }
+    connectStream(): void {
+        if (!this.streamListener) {
+            this.streamListener = this.stream.onData(data => {
+                // applying an edit is an asynchronous operation so use a queue to process events in order as they are received
+                // also capture the promise so that it can be used to wait for the queue to finish processing events
+                this.eventQueuePromise = this.eventQueue.push(async () => {
+                    // give the event stream data to the provided handler to handle
+                    // it is possible the server will send an edit before the original submit has
+                    // had a chance to respond so wait for all pending submissions before processing the event
+                    await this.waitForAllSubmits().then(() => {
+                        const controller = this.streamHandler(data);
 
-                this.connectPromise = stream.connect().then(connection => {
-                    if (isEventStreamError(connection)) {
-                        return { success: false, error: connection.error };
-                    }
-
-                    this.connection = connection;
-                    this.connectionListener = this.connection.onData(data => {
-                        // applying an edit is an asynchronous operation so use a queue to process events in order as they are received
-                        // also capture the promise so that it can be used to wait for the queue to finish processing events
-                        this.eventQueuePromise = this.eventQueue.push(async () => {
-                            // give the event stream data to the root/parent controller to handle
-                            // it is possible the server will send an edit before the original submit has
-                            // had a chance to respond so wait for all pending submissions before processing the event
-                            await this.waitForAllSubmits().then(() => root.handleEditEvent(data));
-                        });
-                    });
-
-                    return { success: true };
-                });
-
-                return this.connectPromise;
-            }
-        
-            createChannel(options: IPublishEditChannelOptions): IPublishEditChannel {
-                return {
-                    push: edit => {
-                        const context = this.savePublishEditContext(options.model, edit);
-                        return this.publishQueue.push(async () => {
-                            const applyResult: ApplyResult = await Promise.resolve(options.apply(edit)).catch(error => ({ success: false, error }));
-
-                            if (isApplyEditHandlerSuccess(applyResult)) {
-                                // if successful start the submit process and let it run in the background
-                                // the submit process will resolve the context when finished
-                                this.submitEdit(
-                                    context, 
-                                    edit, 
-                                    applyResult.reverse, 
-                                    options.syncModel, 
-                                    options.submit,
-                                    options.apply);
-                            }
-                            else {
-                                context.resolve({ success: false, edit, error: applyResult.error });
-                            }
-
-                            return { success: applyResult.success, edit, waitForSubmit: context.waitForSubmit };
-                        });
-                    }
-                };
-            }
-        
-            disconnect(): void {
-                if (this.connectionListener) {
-                    this.connectionListener.remove();
-                    this.connectionListener = undefined;
-                }
-
-                if (this.connection) {
-                    this.connection.disconnect();
-                    this.connection = undefined;
-                    this.isClosed = true;
-                }
-            }
-
-            tryWaitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult | undefined> {
-                const context = this.editContexts.get(edit);
-                return context ? context.waitForSubmit : Promise.resolve(undefined);
-            }
-        
-            async waitForAllSubmits(): Promise<void> {
-                await Promise.all(Array.from(this.submissions.values()));
-            }
-
-            async waitForIdle(): Promise<void> {
-                await this.waitForAllSubmits();
-                await this.eventQueuePromise;
-            }
-        
-            waitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult> {
-                return this.getPublishEditContext(edit).waitForSubmit;
-            }
-        
-            private getPublishEditContext(edit: IEditOperation): IPublishEditContext {
-                const context = this.editContexts.get(edit);
-
-                if (!context) {
-                    throw new Error(`Publish edit context (${edit.type}) not found.`);
-                }
-
-                return context;
-            }
-
-            private savePublishEditContext(model: IModel, edit: IEditOperation): IPublishEditContext {
-                let reject!: (err: any) => void;
-                let resolve!: (result: ISubmitEditResult) => void;
-                // note: the submission will be handled in the background; if it is necessary to wait for the submission to complete use the waitForSubmit function
-                const waitForSubmit = this.saveSubmissionPromise(new Promise((res: (value: ISubmitEditResult) => void, rej) => {
-                    resolve = res;
-                    reject = rej;
-                }));
-        
-                const context: IPublishEditContext = {
-                    model,
-                    waitForSubmit,
-                    reject: err => {
-                        reject(err);
-                        this.editContexts.delete(edit);
-                    },
-                    resolve: result => {
-                        resolve(result);
-                        this.editContexts.delete(edit);
-                    }
-                };
-        
-                this.editContexts.set(edit, context);
-        
-                return context;
-            }
-        
-            private saveSubmissionPromise(promise: Promise<ISubmitEditResult>): Promise<ISubmitEditResult> {
-                this.submissions.add(promise);
-                return promise
-                    .then(result => {
-                        this.submissions.delete(promise);
-                        return result;
-                    })
-                    .catch(err => {
-                        this.submissions.delete(promise);
-                        throw err;
-                    });
-            }
-        
-            private async submitEdit(context: IPublishEditContext, edit: IEditOperation, reverse: IEditOperation, syncModel: SyncModelCallback, submit: ISubmitEditHandler, apply: IApplyEditHandler): Promise<void> {
-                // apply a reverse edit since the published edit has already been applied and then sync the model
-                // TODO: how to best handle the error when applying the reverse edit
-                const reverseAndSync = (reverse: IEditOperation) => Promise.resolve(apply(reverse))
-                    .then(() => syncModel())
-                    .catch(() => syncModel());
-        
-                // if we fail to submit capture the error and reverse
-                const result = await submit(edit).catch(error => (<ISubmitEditHandlerFail>{ success: false, error }));
-                if (isSubmitEditHandlerSuccess(result)) {
-                    // the revision should always move forward
-                    if (context.model.revision < result.revision) {
-                        // the revision numbers are expected to be sequential; if out of sync, resync the model and 
-                        // do not set the revision number, that should be handled by the sync process
-                        if (context.model.revision + 1 !== result.revision) {
-                            return syncModel()
-                                .then(() => context.resolve({ success: true, edit, reverse, data: result.data }))
-                                .catch(err => context.reject(err));
+                        if (controller) {
+                            // ideally the function should not be public
+                            (<any>controller).handleEditEvent(data);
                         }
+                    });
+                });
+            });
+        }
+    }
 
-                        context.model.setRevision(result.revision);
+    createChannel(options: IPublishEditChannelOptions): IPublishEditChannel {
+        return {
+            push: edit => {
+                const context = this.savePublishEditContext(options.model, edit);
+                return this.publishQueue.push(async () => {
+                    const applyResult: ApplyResult = await Promise.resolve(options.apply(edit)).catch(error => ({ success: false, error }));
+
+                    if (isApplyEditHandlerSuccess(applyResult)) {
+                        // if successful start the submit process and let it run in the background
+                        // the submit process will resolve the context when finished
+                        this.submitEdit(
+                            context, 
+                            edit, 
+                            applyResult.reverse, 
+                            options.syncModel, 
+                            options.submit,
+                            options.apply);
                     }
-                    
-                    context.resolve({ success: true, edit, reverse, data: result.data });
-                }
-                else {
-                    await reverseAndSync(reverse)
-                        .then(() => context.resolve({ success: false, edit, reverse, error: result.error }))
+                    else {
+                        context.resolve({ success: false, edit, error: applyResult.error });
+                    }
+
+                    return { success: applyResult.success, edit, waitForSubmit: context.waitForSubmit };
+                });
+            }
+        };
+    }
+
+    disconnectStream(): void {
+        if (this.streamListener) {
+            this.streamListener.remove();
+            this.streamListener = undefined;
+        }
+    }
+
+    async waitForAllSubmits(): Promise<void> {
+        await Promise.all(Array.from(this.submissions.values()));
+    }
+
+    async waitForIdle(): Promise<void> {
+        // wait for the event queue first as it maybe in the process of handling an event
+        await this.eventQueuePromise;
+        await this.waitForAllSubmits();
+    }
+
+    waitForSubmit(edit: IEditOperation): Promise<ISubmitEditResult | undefined> {
+        const context = this.editContexts.get(edit);
+        return context ? context.waitForSubmit : Promise.resolve(undefined);
+    }
+
+    private savePublishEditContext(model: IModel, edit: IEditOperation): IPublishEditContext {
+        let reject!: (err: any) => void;
+        let resolve!: (result: ISubmitEditResult) => void;
+        // note: the submission will be handled in the background; if it is necessary to wait for the submission to complete use the waitForSubmit function
+        const waitForSubmit = this.saveSubmissionPromise(new Promise((res: (value: ISubmitEditResult) => void, rej) => {
+            resolve = res;
+            reject = rej;
+        }));
+
+        const context: IPublishEditContext = {
+            model,
+            waitForSubmit,
+            reject: err => {
+                reject(err);
+                this.editContexts.delete(edit);
+            },
+            resolve: result => {
+                resolve(result);
+                this.editContexts.delete(edit);
+            }
+        };
+
+        this.editContexts.set(edit, context);
+
+        return context;
+    }
+
+    private saveSubmissionPromise(promise: Promise<ISubmitEditResult>): Promise<ISubmitEditResult> {
+        this.submissions.add(promise);
+        return promise
+            .then(result => {
+                this.submissions.delete(promise);
+                return result;
+            })
+            .catch(err => {
+                this.submissions.delete(promise);
+                throw err;
+            });
+    }
+
+    private async submitEdit(context: IPublishEditContext, edit: IEditOperation, reverse: IEditOperation, syncModel: SyncModelCallback, submit: ISubmitEditHandler, apply: IApplyEditHandler): Promise<void> {
+        // apply a reverse edit since the published edit has already been applied and then sync the model
+        // TODO: how to best handle the error when applying the reverse edit
+        const reverseAndSync = (reverse: IEditOperation) => Promise.resolve(apply(reverse))
+            .then(() => syncModel())
+            .catch(() => syncModel());
+
+        // if we fail to submit capture the error and reverse
+        const result = await submit(edit).catch(error => (<ISubmitEditHandlerFail>{ success: false, error }));
+        if (isSubmitEditHandlerSuccess(result)) {
+            // the revision should always move forward
+            if (context.model.revision < result.revision) {
+                // the revision numbers are expected to be sequential; if out of sync, resync the model and 
+                // do not set the revision number, that should be handled by the sync process
+                if (context.model.revision + 1 !== result.revision) {
+                    return syncModel()
+                        .then(() => context.resolve({ success: true, edit, reverse, data: result.data }))
                         .catch(err => context.reject(err));
                 }
+
+                context.model.setRevision(result.revision);
             }
+            
+            context.resolve({ success: true, edit, reverse, data: result.data });
+        }
+        else {
+            await reverseAndSync(reverse)
+                .then(() => context.resolve({ success: false, edit, reverse, error: result.error }))
+                .catch(err => context.reject(err));
         }
     }
 }
