@@ -58,7 +58,7 @@ export interface IRequestEventStream<TData = any> {
     readonly onInvalidData: IEvent<IInvalidDataEvent>;
     /** 
      * An event that is raised when a message has been received. Note: a stream will automatically
-     * close when all onMessage listeners are unregistered.
+     * connect (unless overriden) and close when listeners are registered and unregistered.
      */
     readonly onMessage: IEvent<IMessageEvent<TData>>;
     /** An event that is raised after a connection has been opened. */
@@ -126,10 +126,6 @@ export class RequestEventStream<TData = any> implements IRequestEventStream<TDat
 
         this.validate = options.validate || jsonValidator;
         this._message = new class extends EventEmitter<IMessageEvent<TData>> {
-            constructor() {
-                super("sse-message");
-            }
-
             protected callbackRegistered(): void {
                 if (self.shouldAutoConnect() && !self.source) {
                     // after connecting verify that the listener is still registered; auto-close if not
