@@ -161,8 +161,8 @@ function isSubmitEditHandlerSuccess(result: SubmitResult): result is ISubmitEdit
     return (<ISubmitEditHandlerSuccess>result).success;
 }
 
-function isPublishEditQueue(streamQueueOrParent: IEditEventStream | IPublishEditQueue | EditController): streamQueueOrParent is IPublishEditQueue {
-    return (<IPublishEditQueue>streamQueueOrParent).createChannel !== undefined;
+function isPublishEditQueue(streamOrQueue: IEditEventStream | IPublishEditQueue): streamOrQueue is IPublishEditQueue {
+    return (<IPublishEditQueue>streamOrQueue).createChannel !== undefined;
 }
 
 /** 
@@ -179,9 +179,11 @@ export abstract class EditController<TModel extends IModel = IModel> {
     private readonly editApplied = new EventEmitter<IEditOperation>();
     private readonly handlers: { [editType: string]: EditHandlers<any> } = {};
 
-    private readonly editQueue: IPublishEditQueue;
     private readonly synchronizer: Synchronizer;
     private readonly channel: IPublishEditChannel;
+
+    /** The edit queue used to manage publishing edits for the controller. */
+    protected readonly editQueue: IPublishEditQueue;
 
     /** The model type the controller is responsible for and is expected to be the model type for an edit event. */
     abstract readonly modelType: string;
@@ -195,23 +197,15 @@ export abstract class EditController<TModel extends IModel = IModel> {
     constructor(model: TModel, stream: IEditEventStream);
     /** Creates a new edit controller using the specified queue. */
     constructor(model: TModel, queue: IPublishEditQueue);
-    /**
-     * Creates a new edit controller whose model is the child of root aggregate allowing the constructed controller
-     * to share the same edit queue and underlying edit event stream.
-     */
-    constructor(model: TModel, parent: EditController);
-    constructor(model: TModel, streamQueueOrParent: IEditEventStream | IPublishEditQueue | EditController);
-    constructor(readonly model: TModel, streamQueueOrParent: IEditEventStream | IPublishEditQueue | EditController) {
+    constructor(model: TModel, streamOrQueue: IEditEventStream | IPublishEditQueue);
+    constructor(readonly model: TModel, streamOrQueue: IEditEventStream | IPublishEditQueue) {
         if (model.isNew()) {
             throw new Error("Edit controller does not support new models.");
         }
 
-        // use the parent's queue since edit events are expected to come on the same stream
-        this.editQueue = streamQueueOrParent instanceof EditController
-            ? streamQueueOrParent.editQueue
-            : isPublishEditQueue(streamQueueOrParent)
-                ? streamQueueOrParent
-                : new PublishEditQueue(streamQueueOrParent, data => this.getController(data));
+        this.editQueue = isPublishEditQueue(streamOrQueue)
+            ? streamOrQueue
+            : new PublishEditQueue(streamOrQueue, data => this.getController(data));
 
         this.synchronizer = new Synchronizer(
             this.model, 
@@ -374,6 +368,7 @@ export class PublishEditQueue implements IPublishEditQueue {
     private eventQueuePromise = Promise.resolve();
     private streamListener?: IEventListener;
 
+    /** Initializes a new instance of the PublishEditQueue and automatically connects to the given stream. */
     constructor(
         private readonly stream: IEditEventStream, 
         private readonly streamHandler: IEditEventStreamHandler) {

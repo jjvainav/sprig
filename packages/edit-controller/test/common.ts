@@ -270,8 +270,8 @@ export class MockEditEventStream implements IEditEventStream {
 export class ChildController extends EditController<IChildModel> {
     modelType = "child";
 
-    constructor(private readonly store: MockEditStore, model: IChildModel, parent: TestController) {
-        super(model, parent);
+    constructor(private readonly store: MockEditStore, model: IChildModel, queue: IPublishEditQueue) {
+        super(model, queue);
 
         this.registerEditHandlers("update", {
             apply: this.applyUpdate.bind(this),
@@ -375,7 +375,7 @@ export class TestController extends EditController<ITestModel> {
             if (this.model.children) {
                 for (const child of this.model.children) {
                     if (child.id === data.modelId) {
-                        return new ChildController(this.store, child, this);
+                        return new ChildController(this.store, child, this.editQueue);
                     }
                 }
             }
