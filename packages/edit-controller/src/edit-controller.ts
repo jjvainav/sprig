@@ -142,7 +142,7 @@ export interface IPublishEditChannel {
 
 /** Handles an edit event from the stream or optionally return an edit controller to forward the event for handling. */
 export interface IEditEventStreamHandler {
-    (data: IEditEventStreamData): EditController | undefined | void;
+    (data: IEditEventStreamData): EditController | undefined | Promise<EditController | undefined> | void;
 }
 
 /** Maintains the state for an edit while publishing (e.g. apply and submit process). */
@@ -384,8 +384,8 @@ export class PublishEditQueue implements IPublishEditQueue {
                     // give the event stream data to the provided handler to handle
                     // it is possible the server will send an edit before the original submit has
                     // had a chance to respond so wait for all pending submissions before processing the event
-                    await this.waitForAllSubmits().then(() => {
-                        const controller = this.streamHandler(data);
+                    await this.waitForAllSubmits().then(async () => {
+                        const controller = await Promise.resolve(this.streamHandler(data));
 
                         if (controller) {
                             // ideally the function should not be public
