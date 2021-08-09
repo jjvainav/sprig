@@ -28,6 +28,7 @@ interface ITestModel extends IModel<ITestAttributes> {
 interface ITestModelConstraints {
     readonly itemRequired?: boolean;
     readonly itemsMaxLength?: number;
+    readonly itemMustExistInArray?: boolean;
 }
 
 interface IItemModel extends IModel<IItemAttributes> {
@@ -99,6 +100,25 @@ class TestModel extends Model<ITestAttributes> implements ITestModel {
                     this.constraints.itemsMaxLength, 
                     `Items length cannot be greater than ${this.constraints.itemsMaxLength}.`) 
             };
+        }
+
+        if (this.constraints && this.constraints.itemMustExistInArray) {
+            const itemExistsInArray = (attributes: ITestAttributes) => {
+                if (attributes.item && attributes.items) {
+                    for (const item of attributes.items) {
+                        if (attributes.item.id === item.id) {
+                            return true;
+                        } 
+                    }
+                }
+
+                return false;
+            };
+
+            return createValidation(zod.object(shape).refine(data => itemExistsInArray(data), {
+                message: "Item must exist in items array.",
+                path: ["items"]
+            }));
         }
 
         return createValidation(zod.object(shape));
@@ -304,6 +324,42 @@ describe("model with zod validation", () => {
         expect(result).toBe(false);
         expect(model.hasError()).toBe(true);
         expect(model.items![1].errors.value).toBe("Value is required.");
+    });
+
+    test("validate a single attribute when validation schema has a refinement", () => {
+        const item = new ItemModel({ id: "1", value: "value" });
+        const model: ITestModel = new TestModel({
+            id: "123",
+            foo: "",
+            bar: "bar",
+            item,
+            items: [item]
+        },
+        { itemMustExistInArray: true });
+
+        const result = model.validate("bar");
+
+        expect(result).toBe(true);
+        // even though foo is invalid the validation check for 'bar' should not trigger an error for 'foo'
+        expect(model.hasError()).toBe(false);
+    });
+
+    test("validate a single attribute that generates an error from a rule created by a refinement", () => {
+        const item = new ItemModel({ id: "1", value: "value" });
+        const model: ITestModel = new TestModel({
+            id: "123",
+            foo: "foo",
+            bar: "bar",
+            item,
+            items: []
+        },
+        { itemMustExistInArray: true });
+
+        const result = model.validate("items");
+
+        expect(result).toBe(false);
+        expect(model.hasError()).toBe(true);
+        expect(model.errors.items).toBe("Item must exist in items array.");
     });
 
     test("validate with child model attribute that is invalid", () => {

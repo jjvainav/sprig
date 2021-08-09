@@ -9,9 +9,15 @@ type ZodParseResult<T> = ZodSuccessResult<T> | ZodErrorResult;
 export function createValidation<TAttributes extends IModelAttributes, TModel extends IModel<TAttributes>>(schema: zod.Schema<TAttributes>): IModelValidation<TAttributes, TModel> {
     return {
         validateAttribute: (model, attribute) => {
-            const result = (<zod.ZodObject<any>><unknown>schema).pick({ [attribute]: true }).safeParse(model);
+            const result = isZodObject(schema)
+                ? schema.pick({ [attribute]: true }).safeParse(model)
+                : schema.safeParse(model);
+
             if (!isSuccess(result)) {
-                model.setErrorMessage(attribute, getErrorMessage(result.error, <string>attribute));
+                const errorMessage = getErrorMessage(result.error, <string>attribute);
+                if (errorMessage) {
+                    model.setErrorMessage(attribute, getErrorMessage(result.error, <string>attribute));
+                }
             }
         },
         validateModel: model => {
@@ -30,6 +36,10 @@ function getErrorMessage(error: zod.ZodError, attribute: string): string {
 
 function isSuccess<T>(result: ZodParseResult<T>): result is ZodSuccessResult<T> {
     return result.success;
+}
+
+function isZodObject(schema: any): schema is zod.ZodObject<any> {
+    return (<zod.ZodObject<any>>schema).pick !== undefined;
 }
 
 function setModelErrors<TAttributes extends IModelAttributes>(model: IModel<TAttributes>, error: zod.ZodError): void {
