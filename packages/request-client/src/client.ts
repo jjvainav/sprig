@@ -1,4 +1,4 @@
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 
 /** Represents an error while attempting to make a request. */
 export enum RequestErrorCode {
@@ -282,11 +282,6 @@ function injectRequestId(request: IRequest): IRequest {
     return request;
 }
 
-function isAxiosError(error: Error): error is AxiosError {
-    // TODO: when axios version 0.19 is released the AxiosError object has an isAxiosError flag that should be used to check if the Error is an AxiosError
-    return (<any>error).request !== undefined;
-}
-
 function validateExpectedStatus(status: number): boolean {
     // default logic for validating a status - return true for all 2xx codes
     return status >= 200 && status < 300;
@@ -311,7 +306,7 @@ const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) =
     }))
     .catch(error => {
         // note: the axios error will get thrown for responses that fail validateStatus (i.e. status codes not specified as an expected status)
-        if (isAxiosError(error)) {
+        if (axios.isAxiosError(error)) {
             if (error.response) {
                 reject(createErrorForResponse(request, error.response, error.message));
             }

@@ -21,7 +21,18 @@ interface IMockEventSourceResponse {
     status?: number;
 }
 
+function mockAxiosisError() {
+    const fn = mocked(axios.isAxiosError).mockImplementation(payload => {
+        return typeof payload === "object" && payload.isAxiosError === true;
+    });
+
+    fn.mockClear();
+
+    return fn.mock;
+}
+
 function mockAxiosResponse(response: IMockAxiosResponse) {
+    mockAxiosisError();
     const fn = mocked(axios.request).mockImplementation(() => {
         if (response.axiosErrorCode) {
             const error = new Error("error") as AxiosError;
@@ -54,6 +65,8 @@ function mockAxiosResponse(response: IMockAxiosResponse) {
 }
 
 function mockEventSourceResponse(response?: IMockEventSourceResponse) {
+    mockAxiosisError();
+
     response = response || {};
     response = response.status ? response : { ...response, status: 200 };
 
