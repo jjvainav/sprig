@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client",
     "description": "A client for making REST API requests built on top of axios.",
-    "version": "0.1.71",
+    "version": "0.2.0",
     "license": "MIT",
     "repository": {
         "type": "git",
