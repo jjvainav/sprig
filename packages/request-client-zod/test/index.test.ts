@@ -1,7 +1,7 @@
 import * as zod from "zod";
 // in order for the mock to work it must be imported before request-client
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
-import client, { RequestErrorCode } from "@sprig/request-client";
+import client, { RequestErrorCode } from "@sprig/request-client/dist/polyfill";
 import { validate } from "../src";
 
 interface IFoo {

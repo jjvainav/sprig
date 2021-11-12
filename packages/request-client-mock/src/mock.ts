@@ -8,7 +8,7 @@ import EventSource, { EventSourceInitDict } from "eventsource";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
 import * as url from "url";
-import client, { IEventStreamOptions, IRequestClient, IRequestOptions } from "@sprig/request-client";
+import client, { IEventStreamOptions, IRequestClient, IRequestOptions } from "@sprig/request-client/dist/polyfill";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -41,6 +41,10 @@ interface IMockEventSource extends EventSource {
 
 const requests = new Map<string, IRequestOptions>();
 const responses = new Map<string, IMockResponse>();
+
+const mockAxiosIsError = mocked(axios.isAxiosError).mockImplementation(payload => {
+    return typeof payload === "object" && payload.isAxiosError === true;
+});
 
 const mockRequest = mocked(axios.request);    
 mockRequest.mockImplementation(config => {
@@ -227,6 +231,7 @@ const __stream = client.stream;
 
 /** Clears all the saved and captured state for the request mock. */
 export function mockClear(): void {
+    mockAxiosIsError.mockClear();
     mockEventSource.mockClear();
     mockRequest.mockClear();
     eventSourceInstances.splice(0);

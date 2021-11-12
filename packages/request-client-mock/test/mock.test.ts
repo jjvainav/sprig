@@ -1,6 +1,6 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "../src";
-import client, { IRequestOptions, RequestError, RequestErrorCode } from "@sprig/request-client";
+import client, { IRequestOptions, RequestError, RequestErrorCode } from "@sprig/request-client/dist/polyfill";
 import EventSource from "eventsource";
 
 describe("client request mock", () => {

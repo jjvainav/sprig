@@ -1,6 +1,6 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
-import client from "@sprig/request-client";
+import client from "@sprig/request-client/dist/polyfill";
 import { ReadyState, RequestEventStream } from "../src"
 
 describe("request event stream", () => { 

@@ -1,5 +1,5 @@
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
-import { IEventStreamOptions, IRequest, IRequestClient, IRequestPromise, IResponse, RequestError, RequestErrorCode } from "@sprig/request-client/dist/common";
+import { IEventStreamOptions, IRequest, IRequestClient, IRequestPromise, IResponse, RequestError, RequestErrorCode } from "@sprig/request-client";
 
 /** Defines the event data for an invalid message received. */
 export interface IInvalidDataEvent {

@@ -2,8 +2,8 @@ import axios, { AxiosError, AxiosResponse } from "axios";
 import EventSource from "eventsource";
 import * as HttpStatus from "http-status-codes";
 import { mocked } from "ts-jest/utils";
-import { basicAuthentication } from "../src";
-import client, { RequestErrorCode, RequestError } from "../src";
+import { basicAuthentication, RequestErrorCode, RequestError } from "../src";
+import client from "../src/polyfill";
 
 jest.mock("axios");
 jest.genMockFromModule("eventsource");

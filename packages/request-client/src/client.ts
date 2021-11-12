@@ -146,8 +146,8 @@ export interface IRequestPromise extends Promise<IResponse> {
     thenUse(interceptor: IResponseInterceptor): IRequestPromise;
 }
 
-/** Builds a new request client using the specified event source factory method for creating EventSource instances. */
-export function buildClient(createEventSource: (options: IRequestOptions) => EventSource): IRequestClient {
+/** Create a new request client using the specified event source factory method for creating EventSource instances. */
+export function createClient(createEventSource: (options: IRequestOptions) => EventSource): IRequestClient {
     return {
         /** Invokes an HTTP request. */
         request(options: IRequestOptions): IRequest {

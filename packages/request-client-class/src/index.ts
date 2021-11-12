@@ -1,4 +1,4 @@
-import { IEventStreamOptions, IRequestClient, IRequestOptions, IResponse } from "@sprig/request-client/dist/common";
+import { IEventStreamOptions, IRequestClient, IRequestOptions, IResponse } from "@sprig/request-client";
 
 /** Defines a constructor for a request client class. */
 export type RequestClientConstructor<TClient> = { new(options: IRequestClientOptions): TClient };

@@ -1,6 +1,6 @@
 // in order for the mock to work it must be imported first
 import { mockClear, mockResponse } from "@sprig/request-client-mock";
-import client, { RequestErrorCode } from "@sprig/request-client";
+import client, { RequestErrorCode } from "@sprig/request-client/dist/polyfill";
 import { retry } from "../src"
 
 describe("request retry", () => { 
