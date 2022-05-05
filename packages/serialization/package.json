@@ -1,7 +1,7 @@
 {
     "name": "@sprig/serialization",
     "description": "Provides support for class based JSON serialization/deserialization.",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "license": "MIT",
     "repository": {
         "type": "git",
