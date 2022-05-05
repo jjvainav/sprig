@@ -60,6 +60,8 @@ export interface IEditEventStreamData {
     readonly modelType: string;
     /** An edit operation to apply to the model. */
     readonly edit: IEditOperation;
+    /** A timestamp associated with the edit. */
+    readonly timestamp: number;
     /** The revision number for the edit. */
     readonly revision: number;
 }

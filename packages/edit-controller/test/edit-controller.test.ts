@@ -247,6 +247,7 @@ describe("edit controller", () => {
             modelType: controller.modelType,
             modelId: controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
@@ -284,6 +285,7 @@ describe("edit controller", () => {
             modelType: controller.modelType,
             modelId: controller.model.id,
             edit: edit1,
+            timestamp: Date.now(),
             revision: revision1
         });
 
@@ -291,6 +293,7 @@ describe("edit controller", () => {
             modelType: controller.modelType,
             modelId: controller.model.id,
             edit: edit2,
+            timestamp: Date.now(),
             revision: revision2
         });
 
@@ -330,6 +333,7 @@ describe("edit controller", () => {
             modelType: "child",
             modelId: child.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
@@ -357,6 +361,7 @@ describe("edit controller", () => {
             modelType: controller.modelType,
             modelId: controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
@@ -387,6 +392,7 @@ describe("edit controller", () => {
             modelType: context.controller.modelType,
             modelId: context.controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
@@ -428,6 +434,7 @@ describe("edit controller", () => {
             modelType: context.controller.modelType,
             modelId: context.controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
@@ -436,6 +443,7 @@ describe("edit controller", () => {
             modelType: context2.controller.modelType,
             modelId: context2.controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision: revision2
         });
 
@@ -475,6 +483,7 @@ describe("edit controller", () => {
             modelType: context.controller.modelType,
             modelId: context.controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
@@ -516,6 +525,7 @@ describe("edit controller", () => {
             modelType: context.controller.modelType,
             modelId: context.controller.model.id,
             edit,
+            timestamp: Date.now(),
             revision
         });
 
