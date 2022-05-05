@@ -2,6 +2,7 @@ import { AsyncQueue } from "@sprig/async-queue";
 import { IEditOperation } from "@sprig/edit-operation";
 import { EventEmitter, IEvent, IEventListener } from "@sprig/event-emitter";
 import { IModel } from "@sprig/model";
+import { IEditEvent } from "./edit-event";
 import { Synchronizer } from "./synchronizer";
 
 /** Defines a callback responsible for synchronizing a model. */
@@ -21,7 +22,7 @@ type EditHandlers<TEdit extends IEditOperation = IEditOperation> = {
 
 /** A callback that handles applying an edit operation and return a reverse edit. */
 export interface IApplyEditHandler<TEdit extends IEditOperation = IEditOperation> {
-    (edit: TEdit): ApplyResult | Promise<ApplyResult>;
+    (edit: TEdit, timestamp: number): ApplyResult | Promise<ApplyResult>;
 }
 
 /** Indicates a handler has successfully applied an edit. */
@@ -53,17 +54,11 @@ export interface IEditEventStream {
 }
 
 /** Defines the data expected from an edit event stream. */
-export interface IEditEventStreamData {
+export interface IEditEventStreamData extends IEditEvent {
     /** The id of the model the edit applies to. */
     readonly modelId: string;
     /** The type of model the edit applies to. */
     readonly modelType: string;
-    /** An edit operation to apply to the model. */
-    readonly edit: IEditOperation;
-    /** A timestamp associated with the edit. */
-    readonly timestamp: number;
-    /** The revision number for the edit. */
-    readonly revision: number;
 }
 
 /** Defines the result of publishing an edit. */
@@ -139,7 +134,7 @@ export interface IPublishEditChannelOptions {
 
 /** Defines a channel to the publish edit queue for pushing edits. */
 export interface IPublishEditChannel {
-    push(edit: IEditOperation): Promise<IPublishEditResult>;
+    push(edit: IEditOperation, timestamp: number): Promise<IPublishEditResult>;
 }
 
 /** Handles an edit event from the stream or optionally return an edit controller to forward the event for handling. */
@@ -165,6 +160,10 @@ function isSubmitEditHandlerSuccess(result: SubmitResult): result is ISubmitEdit
 
 function isPublishEditQueue(streamOrQueue: IEditEventStream | IPublishEditQueue): streamOrQueue is IPublishEditQueue {
     return (<IPublishEditQueue>streamOrQueue).createChannel !== undefined;
+}
+
+function unixTimestamp(): number {
+    return Math.floor(Date.now() / 1000);
 }
 
 /** 
@@ -211,14 +210,14 @@ export abstract class EditController<TModel extends IModel = IModel> {
 
         this.synchronizer = new Synchronizer(
             this.model, 
-            (startRevision) => this.fetchEdits(startRevision),
-            (edit, revision) => this.applyEdit(edit, revision).then(result => result.success));
+            startRevision => this.fetchEdits(startRevision),
+            event => this.applyEdit(event.edit, event.revision, event.timestamp).then(result => result.success));
 
         this.channel = this.editQueue.createChannel({
             model,
             syncModel: () => this.synchronizer.synchronize(),
             submit: edit => this.handleSubmitEdit(edit),
-            apply: edit => this.handleApplyEdit(edit)
+            apply: (edit, timestamp) => this.handleApplyEdit(edit, timestamp)
         });
     }
 
@@ -253,15 +252,15 @@ export abstract class EditController<TModel extends IModel = IModel> {
     }
 
     /** Fetches new edits for the current model starting at the specified revision number. */
-    protected abstract fetchEdits(startRevision?: number): Promise<IEditOperation[]>;
+    protected abstract fetchEdits(startRevision?: number): Promise<IEditEvent[]>;
 
     /** Manually apply an edit against a model (but does not submit) and associate the specified revision number. */
-    protected applyEdit(edit: IEditOperation, revision: number): Promise<IApplyEditResult> {
-        // create a separate channel so that will simply return success for the submission, this will skip the submission step
+    protected applyEdit(edit: IEditOperation, revision: number, timestamp: number): Promise<IApplyEditResult> {
+        // create a separate channel that will simply return success for the submission, this will skip the submission step
         const channel = this.editQueue.createChannel({ 
             model: this.model,
             syncModel: () => this.synchronizer.synchronize(), 
-            apply: edit => this.handleApplyEdit(edit), 
+            apply: (edit, timestamp) => this.handleApplyEdit(edit, timestamp), 
             submit: () => Promise.resolve({ success: true, revision }) 
         });
 
@@ -273,7 +272,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
             return syncOnFail();
         }
 
-        return channel.push(edit).then(async result => {
+        return channel.push(edit, timestamp).then(async result => {
             if (result.success) {
                 // if successful wait for the submission to finish so that we can get the reverse edit (this is expected to always succeed)
                 const submitResult = await result.waitForSubmit;
@@ -304,7 +303,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
             if (this.model.revision < data.revision) {
                 // TODO: if the revision is not sequential should this sync instead of apply?
                 // TODO: what if the edit fails to apply? force a sync?
-                await this.applyEdit(data.edit, data.revision);
+                await this.applyEdit(data.edit, data.revision, data.timestamp);
             }
         }
     }
@@ -314,7 +313,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
      * the result will include another promise that can be used to await the submission if necessary.
      */
     protected publishEdit<TEdit extends IEditOperation = IEditOperation>(edit: TEdit): Promise<IPublishEditResult> {
-        return this.channel.push(edit);
+        return this.channel.push(edit, unixTimestamp());
     }
 
     /** Registers a set of apply and submit handlers for an edit operation. */
@@ -327,7 +326,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
         return this.synchronizer.synchronize();
     }
 
-    private handleApplyEdit(edit: IEditOperation): Promise<ApplyResult> {
+    private handleApplyEdit(edit: IEditOperation, timestamp: number): Promise<ApplyResult> {
         const handlers = this.handlers[edit.type];
         if (!handlers) {
             return Promise.resolve({ 
@@ -336,7 +335,7 @@ export abstract class EditController<TModel extends IModel = IModel> {
             });
         }
 
-        return Promise.resolve(handlers.apply(edit))
+        return Promise.resolve(handlers.apply(edit, timestamp))
             .then(result => {
                 if (isApplyEditHandlerSuccess(result)) {
                     this.editApplied.emit(edit);
@@ -401,10 +400,10 @@ export class PublishEditQueue implements IPublishEditQueue {
 
     createChannel(options: IPublishEditChannelOptions): IPublishEditChannel {
         return {
-            push: edit => {
+            push: (edit, timestamp) => {
                 const context = this.savePublishEditContext(options.model, edit);
                 return this.publishQueue.push(async () => {
-                    const applyResult: ApplyResult = await Promise.resolve(options.apply(edit)).catch(error => ({ success: false, error }));
+                    const applyResult: ApplyResult = await Promise.resolve(options.apply(edit, timestamp)).catch(error => ({ success: false, error }));
 
                     if (isApplyEditHandlerSuccess(applyResult)) {
                         // if successful start the submit process and let it run in the background
@@ -492,7 +491,7 @@ export class PublishEditQueue implements IPublishEditQueue {
     private async submitEdit(context: IPublishEditContext, edit: IEditOperation, reverse: IEditOperation, syncModel: SyncModelCallback, submit: ISubmitEditHandler, apply: IApplyEditHandler): Promise<void> {
         // apply a reverse edit since the published edit has already been applied and then sync the model
         // TODO: how to best handle the error when applying the reverse edit
-        const reverseAndSync = (reverse: IEditOperation) => Promise.resolve(apply(reverse))
+        const reverseAndSync = (reverse: IEditOperation) => Promise.resolve(apply(reverse, unixTimestamp()))
             .then(() => syncModel())
             .catch(() => syncModel());
 

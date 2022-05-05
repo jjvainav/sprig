@@ -1,18 +1,22 @@
-import { IEditOperation } from "@sprig/edit-operation";
+import { IEditEvent } from "../src/edit-event";
 import { Synchronizer } from "../src/synchronizer";
-import { IUpdateTest, TestModel } from "./common";
+import { IUpdateTest, TestModel, unixTimestamp } from "./common";
 
-function applyUpdateTestEdit(model: TestModel, edit: IEditOperation, revision: number): Promise<boolean> {
-    model.foo = (<IUpdateTest>edit).data.foo;
-    model.bar = (<IUpdateTest>edit).data.bar;
-    model.setRevision(revision);
+function applyUpdateTestEdit(model: TestModel, event: IEditEvent): Promise<boolean> {
+    model.foo = (<IUpdateTest>event.edit).data.foo;
+    model.bar = (<IUpdateTest>event.edit).data.bar;
+    model.setRevision(event.revision);
     return Promise.resolve(true);
 }
 
-function createUpdateTestEdit(foo: string, bar: string): IUpdateTest {
+function createUpdateTestEditEvent(foo: string, bar: string, revision: number): IEditEvent {
     return {
-        type: "update",
-        data: { foo, bar }
+        edit: {
+            type: "update",
+            data: { foo, bar }
+        },
+        timestamp: unixTimestamp(),
+        revision
     };
 }
 
@@ -26,19 +30,44 @@ describe("synchronizer", () => {
             revision: 1
         });
 
-        const edit1 = createUpdateTestEdit("foo2", "bar2");
-        const edit2 = createUpdateTestEdit("foo3", "bar3");
+        const event1 = createUpdateTestEditEvent("foo2", "bar2", 2);
+        const event2 = createUpdateTestEditEvent("foo3", "bar3", 3);
 
         const synchronizer = new Synchronizer(
             model, 
-            () => Promise.resolve([edit1, edit2]),
-            (edit, revision) => applyUpdateTestEdit(model, edit, revision));
+            () => Promise.resolve([event1, event2]),
+            event => applyUpdateTestEdit(model, event));
        
         await synchronizer.synchronize();
 
         expect(model.foo).toBe("foo3");
         expect(model.bar).toBe("bar3");
         expect(model.revision).toBe(3);
+    });
+
+    test("synchronize model with new edits returned out of order", async () => {
+        const model = new TestModel({
+            id: "123",
+            foo: "foo",
+            bar: "bar",
+            items: [],
+            revision: 1
+        });
+
+        const event1 = createUpdateTestEditEvent("foo2", "bar2", 2);
+        const event2 = createUpdateTestEditEvent("foo3", "bar3", 3);
+        const event3 = createUpdateTestEditEvent("foo4", "bar4", 4);
+
+        const synchronizer = new Synchronizer(
+            model, 
+            () => Promise.resolve([event3, event1, event2]),
+            event => applyUpdateTestEdit(model, event));
+       
+        await synchronizer.synchronize();
+
+        expect(model.foo).toBe("foo4");
+        expect(model.bar).toBe("bar4");
+        expect(model.revision).toBe(4);
     });
 
     test("synchronize model with multiple concurrent requests", async () => {
@@ -50,9 +79,9 @@ describe("synchronizer", () => {
             revision: 1
         });
 
-        const results: IUpdateTest[] = [
-            createUpdateTestEdit("foo2", "bar2"),
-            createUpdateTestEdit("foo3", "bar3")
+        const results: IEditEvent[] = [
+            createUpdateTestEditEvent("foo2", "bar2", 2),
+            createUpdateTestEditEvent("foo3", "bar3", 3)
         ];
 
         let count = 1;
@@ -63,7 +92,7 @@ describe("synchronizer", () => {
                 // the start revision will be the model's current revision + 1
                 setTimeout(() => resolve(results.slice((startRevision || 0) - 2, end)), 0);
             }),
-            (edit, revision) => applyUpdateTestEdit(model, edit, revision));
+            event => applyUpdateTestEdit(model, event));
        
         // the first synchronize will only contain the first edit whereas the second synchronize will contain both
         synchronizer.synchronize();

@@ -3,7 +3,7 @@ import { EventEmitter, IEvent } from "@sprig/event-emitter";
 import { Model, IModel, IModelValidation } from "@sprig/model";
 import { createValidation } from "@sprig/model-zod";
 import * as zod from "zod";
-import { ApplyResult, EditController, IEditEventStream, IEditEventStreamData, IPublishEditQueue, IPublishEditResult, SubmitResult } from "../src";
+import { ApplyResult, EditController, IEditEvent, IEditEventStream, IEditEventStreamData, IPublishEditQueue, IPublishEditResult, SubmitResult } from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -11,6 +11,7 @@ export interface IEditRecord {
     readonly modelId: string;
     readonly modelType: string;
     readonly edit: IEditOperation;
+    readonly timestamp: number;
     readonly revision: number;
 }
 
@@ -21,6 +22,7 @@ export interface ITestAttributes {
     readonly bar?: string;
     readonly children?: IChildModel[];
     readonly items: string[];
+    readonly timestamp?: number;
     readonly revision: number;
 }
 
@@ -41,6 +43,7 @@ export interface IChild {
 export interface ITestModel extends IModel<ITestAttributes>, ITestAttributes {
     foo?: string;
     bar?: string;
+    timestamp?: number;
 
     addChild(child: IChildModel): void;
     addItem(item: string): void;
@@ -108,6 +111,10 @@ export interface IUpdateChild extends IEditOperation {
     readonly data: {
         readonly value: string;
     };
+}
+
+export function unixTimestamp(): number {
+    return Math.floor(Date.now() / 1000);
 }
 
 export namespace Edits {
@@ -214,7 +221,14 @@ export class MockEditStore {
     private readonly records: IEditRecord[] = [];
 
     addEdit(modelType: string, modelId: string, edit: IEditOperation): number {
-        const record = { modelType, modelId, edit, revision: this.getNextRevisionNumber(modelType, modelId) };
+        const record = { 
+            modelType, 
+            modelId, 
+            edit, 
+            timestamp: unixTimestamp(),
+            revision: this.getNextRevisionNumber(modelType, modelId) 
+        };
+
         this.records.push(record);
         return record.revision;
     }
@@ -283,9 +297,13 @@ export class ChildController extends EditController<IChildModel> {
         return this.publishEdit<IUpdateChild>({ type: "update", data: { value } });
     }
 
-    protected fetchEdits(startRevision?: number): Promise<IEditOperation[]> {
+    protected fetchEdits(startRevision?: number): Promise<IEditEvent[]> {
         return new Promise(resolve => setTimeout(() => {
-            resolve(this.store.getRecords(this.modelType, this.model.id, startRevision).map(record => record.edit));
+            resolve(this.store.getRecords(this.modelType, this.model.id, startRevision).map(record => ({
+                edit: record.edit,
+                timestamp: record.timestamp,
+                revision: record.revision
+            })));
         }, 
         0));
     }
@@ -363,9 +381,13 @@ export class TestController extends EditController<ITestModel> {
         return this.publishEdit<IUpdateTest>({ type: "update", data: { foo, bar } });
     }
 
-    protected fetchEdits(startRevision?: number): Promise<IEditOperation[]> {
+    protected fetchEdits(startRevision?: number): Promise<IEditEvent[]> {
         return new Promise(resolve => setTimeout(() => {
-            resolve(this.store.getRecords(this.modelType, this.model.id, startRevision).map(record => record.edit));
+            resolve(this.store.getRecords(this.modelType, this.model.id, startRevision).map(record => ({
+                edit: record.edit,
+                timestamp: record.timestamp,
+                revision: record.revision
+            })));
         }, 
         0));
     }
@@ -443,7 +465,7 @@ export class TestController extends EditController<ITestModel> {
         };
     }
 
-    private applyUpdate(edit: IUpdateTest): ApplyResult<IUpdateTest> {
+    private applyUpdate(edit: IUpdateTest, timestamp: number): ApplyResult<IUpdateTest> {
         const reverse: IUpdateTest = { 
             type: "update", 
             data: { 
@@ -454,6 +476,7 @@ export class TestController extends EditController<ITestModel> {
 
         this.model.foo = edit.data.foo;
         this.model.bar = edit.data.bar;
+        this.model.timestamp = timestamp;
 
         return { success: true, reverse };
     }

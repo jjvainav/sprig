@@ -78,6 +78,8 @@ describe("edit controller", () => {
 
         expect(controller.model.foo).toBe("foo");
         expect(controller.model.bar).toBe("bar");
+        // when applying an update edit the controller is expected to set the timestamp on the model based on the timestamp provided by the edit controller
+        expect(controller.model.timestamp).toBeDefined();
         expect(controller.model.revision).toBe(2);
 
         const edits = store.getRecords(controller.modelType, controller.model.id);

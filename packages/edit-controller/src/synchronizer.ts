@@ -1,16 +1,13 @@
-import { IEditOperation } from "@sprig/edit-operation";
 import { IModel } from "@sprig/model";
+import { IEditEvent } from "./edit-event";
 
 export interface IApplyEditCallback {
-    (edit: IEditOperation, revision: number): Promise<boolean>;
+    (event: IEditEvent): Promise<boolean>;
 }
 
-/** 
- * A callback that provides a list of edits for an edit model. It is expected that the returned edit operations are in order
- * and the model's revision is sequential.
- */
+/** A callback that provides a list of edit events for an edit model. */
 export interface IEditProvider {
-    (startRevision?: number): Promise<IEditOperation[]>;
+    (startRevision?: number): Promise<IEditEvent[]>;
 }
 
 /** 
@@ -44,8 +41,9 @@ export interface IEditProvider {
                 return doSynchronize();
             }
 
-            for (let i = 0; i < edits.length; i++) {
-                await this.applyEdit(edits[i], i + startRevision);
+            edits.sort((a, b) => a.revision - b.revision);
+            for (const edit of edits) {
+                await this.applyEdit(edit);
             }
         };
 
