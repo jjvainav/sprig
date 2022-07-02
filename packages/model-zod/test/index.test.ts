@@ -186,6 +186,7 @@ describe("model with zod validation", () => {
 
         expect(result).toBe(false);
         expect(model.hasError()).toBe(true);
+        expect(model.hasError("baz")).toBe(false);
         expect(model.item!.errors.value).toBe("Value is required.");
     });
 

@@ -169,7 +169,17 @@ export abstract class Model<TAttributes extends IModelAttributes = IModelAttribu
 
     private hasChildError(attribute?: keyof TAttributes): boolean {
         let hasError = false;
-        this.forEachChild(child => hasError = hasError || child.hasError(), attribute && this.getChild(attribute));
+        
+        if (attribute) {
+            const child = this.getChild(attribute);
+            if (child) {
+                this.forEachChild(child => hasError = hasError || child.hasError(), child);    
+            }
+        }
+        else {
+            this.forEachChild(child => hasError = hasError || child.hasError());
+        }
+
         return hasError;
     }
 

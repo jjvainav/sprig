@@ -253,6 +253,7 @@ describe("model", () => {
 
         expect(result).toBe(false);
         expect(model.hasError()).toBe(true);
+        expect(model.hasError("baz")).toBe(false);
         expect(model.errors.item).toBe("Item is required.");
     });
 
