@@ -31,7 +31,7 @@ export function createValidation<TAttributes extends IModelAttributes, TModel ex
 
 function getErrorMessage(error: zod.ZodError, attribute: string): string {
     const errors = error.formErrors.fieldErrors;
-    return errors[attribute] && errors[attribute].length ? errors[attribute][0] : "";
+    return errors[attribute] && errors[attribute]!.length ? errors[attribute]![0] : "";
 }
 
 function isSuccess<T>(result: ZodParseResult<T>): result is ZodSuccessResult<T> {
