@@ -22,10 +22,9 @@
     },
     "dependencies": {
         "@sprig/request-client": "0.2.3",
-        "yup": "^0.27.0"
+        "yup": "^1.2.0"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.2.3",
-        "@types/yup": "^0.26.13"
+        "@sprig/request-client-mock": "0.2.3"
     }
 }

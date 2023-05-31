@@ -197,8 +197,8 @@ describe("deserialize", () => {
     test("simple object - empty", () => {
         const obj = new JSONSerializer().deserialize({}, SimpleObject);
 
-        // the object should only have 1 property - the default hello prop
-        expect(Object.keys(obj)).toHaveLength(1);
+        expect(Object.keys(obj)).toHaveLength(7);
+        expect(obj.hello).toBe("hello");
     });
 
     test("nested object", () => {

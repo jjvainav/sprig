@@ -8,7 +8,7 @@ describe("request event stream", () => {
         mockClear();
     });
 
-    test("on message received", async done => {
+    test("on message received", done => {
         mockResponse({ 
             status: 200,
             data: { foo: "bar" }
@@ -26,7 +26,7 @@ describe("request event stream", () => {
         });
     });
 
-    test("on multiple messages received", async done => {
+    test("on multiple messages received", done => {
         const context = mockResponse({ 
             status: 200,
             data: { foo: "bar" }
@@ -50,7 +50,7 @@ describe("request event stream", () => {
         context.sendEventSourceMessage({ foo: "bar" });
     });
 
-    test("on connection with server failed", async done => {
+    test("on connection with server failed", done => {
         // note: an EventSource does not provide access to the failed response body
         mockResponse({ status: 400, data: { message: "Test" } });
 
@@ -69,7 +69,7 @@ describe("request event stream", () => {
         });
     });
 
-    test("with custom validator", async done => {
+    test("with custom validator", done => {
         mockResponse({ status: 200, data: "100" });
 
         const stream = new RequestEventStream<number>({
@@ -85,7 +85,7 @@ describe("request event stream", () => {
         });
     });
 
-    test("with invalid data received", async done => {
+    test("with invalid data received", done => {
         mockResponse({ status: 200, data: "foo" });
 
         const stream = new RequestEventStream<number>({
@@ -103,7 +103,7 @@ describe("request event stream", () => {
         });
     });
 
-    test("verify lazy connect", async done => {
+    test("verify lazy connect", done => {
         mockResponse({ 
             status: 200,
             data: { foo: "bar" }
@@ -125,7 +125,7 @@ describe("request event stream", () => {
         });
     });
 
-    test("verify immediate auto close", async done => {
+    test("verify immediate auto close", done => {
         mockResponse({ 
             status: 200,
             data: { foo: "bar" }
@@ -145,7 +145,7 @@ describe("request event stream", () => {
         stream.onMessage(() => {}).remove();
     });
 
-    test("verify lazy auto close", async done => {
+    test("verify lazy auto close", done => {
         mockResponse({ 
             status: 200,
             data: { foo: "bar" }

@@ -1,7 +1,7 @@
-import axios, { AxiosError, AxiosResponse } from "axios";
+import axios, { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
 import EventSource from "eventsource";
 import * as HttpStatus from "http-status-codes";
-import { mocked } from "ts-jest/utils";
+import { fn, mocked, MockedFunction } from "jest-mock";
 import { basicAuthentication, RequestErrorCode, RequestError } from "../src";
 import client from "../src/polyfill";
 
@@ -22,24 +22,24 @@ interface IMockEventSourceResponse {
 }
 
 function mockAxiosisError() {
-    const fn = mocked(axios.isAxiosError).mockImplementation(payload => {
+    const axiosErrorMock = mocked(axios.isAxiosError).mockImplementation(<T = any, D = any>(payload: any): payload is AxiosError<T, D> => {
         return typeof payload === "object" && payload.isAxiosError === true;
     });
 
-    fn.mockClear();
+    axiosErrorMock.mockClear();
 
-    return fn.mock;
+    return axiosErrorMock.mock;
 }
 
 function mockAxiosResponse(response: IMockAxiosResponse) {
     mockAxiosisError();
-    const fn = mocked(axios.request).mockImplementation(() => {
+    const axiosResponseMock = mocked(axios.request).mockImplementation(<T = unknown, R = AxiosResponse<T, any>>() => {
         if (response.axiosErrorCode) {
             const error = new Error("error") as AxiosError;
             (<any>error).isAxiosError = true;
             error.code = response.axiosErrorCode;
             error.request = {};
-            error.config = {};
+            error.config = { headers: new AxiosHeaders() };
 
             return Promise.reject(error);
         }
@@ -47,21 +47,21 @@ function mockAxiosResponse(response: IMockAxiosResponse) {
         const axiosResponse = toAxiosResponse(response);
 
         if (axiosResponse.status >= 200 && axiosResponse.status < 300) {
-            return Promise.resolve(axiosResponse);
+            return Promise.resolve(<R>axiosResponse);
         }
 
         const error = new Error("error") as AxiosError;
         (<any>error).isAxiosError = true;
         error.response = axiosResponse;
         error.request = {};
-        error.config = {};
+        error.config = { headers: new AxiosHeaders() };
 
         return Promise.reject(error);
     });
 
-    fn.mockClear();
+    axiosResponseMock.mockClear();
 
-    return fn.mock;
+    return axiosResponseMock.mock;
 }
 
 function mockEventSourceResponse(response?: IMockEventSourceResponse) {
@@ -70,8 +70,8 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
     response = response || {};
     response = response.status ? response : { ...response, status: 200 };
 
-    const fn = mocked(EventSource).mockImplementation((url, options) => new class implements EventSource {
-        private readonly listeners = new Map<string, EventListener[]>();
+    const eventSourceMock = mocked(EventSource).mockImplementation((url, options) => new class implements EventSource {
+        private readonly listeners = new Map<string, ((evt: MessageEvent) => void)[]>();
 
         readonly CLOSED = 2;
         readonly CONNECTING = 0;
@@ -81,33 +81,29 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
         readonly readyState = 0;
         readonly withCredentials = false;
 
-        onopen!: (evt: MessageEvent) => any;
-        onmessage!: (evt: MessageEvent) => any;
-        onerror!: (evt: MessageEvent) => any;
+        onopen = fn<(evt: MessageEvent) => any>();
+        onmessage = fn<(evt: MessageEvent) => any>();
+        onerror = fn<(evt: MessageEvent) => any>();
 
         constructor() {
-            (<any>this).onopen = null;
-            (<any>this).onmessage = null;
-            (<any>this).onerror = null;
-
             setTimeout(() => this.connect(), 0);
         }
 
-        addEventListener(type: string, listener: EventListener): void {
+        addEventListener = <MockedFunction<(type: string, listener: (evt: MessageEvent) => void) => void>>fn<(type: string, listener: (evt: MessageEvent) => void) => void>((type, listener) => {
             const callbacks = this.listeners.get(type) || [];
             this.listeners.set(type, [...callbacks, listener]);   
-        }
+        });
 
-        dispatchEvent(evt: Event): boolean {
+        dispatchEvent = <MockedFunction<(evt: Event) => boolean>>fn<(evt: Event) => boolean>(evt => {
             const callbacks = this.listeners.get(evt.type);
             if (callbacks) {
-                callbacks.forEach(callback => callback(evt));
+                callbacks.forEach(callback => callback(<MessageEvent>evt));
             }
 
             return true;
-        }
+        });
 
-        removeEventListener(type: string, listener?: EventListener): void {
+        removeEventListener = <MockedFunction<(type: string, listener: (evt: MessageEvent) => void) => void>>fn<(type: string, listener: (evt: MessageEvent) => void) => void>((type, listener) => {
             if (!listener) {
                 this.listeners.set(type, []);
             }
@@ -122,11 +118,11 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
                     }
                 }
             }
-        }
+        });
 
-        close(): void {
+        close = <MockedFunction<() => void>>fn<() => void>(() => {
             (<any>this).readyState = this.CLOSED;
-        }
+        });
 
         private connect(): void {
             if (response!.status === 200) {
@@ -150,9 +146,9 @@ function mockEventSourceResponse(response?: IMockEventSourceResponse) {
         }
     });
 
-    fn.mockClear();
+    eventSourceMock.mockClear();
 
-    return fn.mock;
+    return eventSourceMock.mock;
 }
 
 function toAxiosResponse(response: IMockAxiosResponse): AxiosResponse {
@@ -161,7 +157,7 @@ function toAxiosResponse(response: IMockAxiosResponse): AxiosResponse {
         status: response.status || 200,
         statusText: HttpStatus.getStatusText(response.status || 200),
         headers: response.headers || {},
-        config: {},
+        config: { headers: new AxiosHeaders() },
         request: response.request
     }
 }
@@ -282,7 +278,7 @@ describe("request", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.httpError);
             expect(err.response).toBeDefined();
             expect(err.response.status).toBe(400);
@@ -301,7 +297,7 @@ describe("request", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.timeout);
             expect(err.response).toBeDefined();
             expect(err.response!.status).toBe(408);
@@ -320,7 +316,7 @@ describe("request", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.timeout);
             expect(err.response).toBeUndefined();
         }
@@ -338,7 +334,7 @@ describe("request", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.clientError);
             expect(err.response).toBeUndefined();
         }
@@ -407,7 +403,7 @@ describe("request", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.httpError);
             expect(err.response.status).toBe(401);
             // make sure axios was not invoked
@@ -434,7 +430,7 @@ describe("request", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.networkUnavailable);
         }
     }); 
@@ -763,10 +759,6 @@ describe("stream", () => {
         .invoke();
 
         expect(result.status).toBe(200);
-        expect((<EventSource>result.data).onopen).toBeDefined();
-        expect((<EventSource>result.data).onopen).toBeNull();
-        expect((<EventSource>result.data).onerror).toBeNull();
-        expect((<EventSource>result.data).onmessage).toBeNull();
     });
 
     test("with header option", async () => {

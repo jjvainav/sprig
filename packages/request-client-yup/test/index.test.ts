@@ -34,12 +34,13 @@ describe("validate", () => {
         });
 
         // result should be a typed IFoo object
-        const result: IFoo = await client.request({
+        const result = await client.request({
             method: "GET",
             url: "http://localhost"
         })
         .invoke()
-        .then(response => validate(response, fooSchema));
+        .then(response => validate(response, fooSchema))
+        .then(result => <IFoo>result);
 
         expect(result.foo).toBe("foo");
         expect(result.foobar.bar).toBe("bar");
@@ -64,7 +65,7 @@ describe("validate", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.invalidResponse);
         }
     });

@@ -1,7 +1,8 @@
 import { EventEmitter, IEvent } from "../src";
 
 describe("event emmitter", () => {
-    jest.useFakeTimers();
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
 
     test("on event", () => {
         const foo = new Foo();
@@ -135,7 +136,7 @@ describe("event emmitter", () => {
         setTimeout(() => { 
             foo.a = "c";
             foo.a = "d";
-        }, 3);
+        }, 4);
 
         jest.runAllTimers();
 

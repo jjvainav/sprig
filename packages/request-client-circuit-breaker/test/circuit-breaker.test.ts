@@ -31,7 +31,7 @@ describe("request circuit breaker", () => {
                 await request.invoke().thenUse(circuitBreaker.metrics);
                 fail();
             }
-            catch (err) {
+            catch (err: any) {
                 if (i === 0) {
                     // the first requests should fail with a timeout status and the circuit should be closed
                     expect(err.code).toBe(RequestErrorCode.timeout);
@@ -71,7 +71,7 @@ describe("request circuit breaker", () => {
                 await request.invoke();
                 fail();
             }
-            catch (err) {
+            catch (err: any) {
                 if (i === 0) {
                     // the first requests should fail with a timeout status and the circuit should be closed
                     expect(err.code).toBe(RequestErrorCode.timeout);
@@ -113,7 +113,7 @@ describe("request circuit breaker", () => {
                 await request.invoke().thenUse(circuitBreaker.metrics);
                 fail();
             }
-            catch (err) {
+            catch (err: any) {
             }
         }
 
@@ -153,7 +153,7 @@ describe("request circuit breaker", () => {
                 await request.invoke().thenUse(circuitBreaker.metrics);
                 fail();
             }
-            catch (err) {
+            catch (err: any) {
             }
         }
 
@@ -169,7 +169,7 @@ describe("request circuit breaker", () => {
                 await request.invoke().thenUse(circuitBreaker.metrics);
                 fail();
             }
-            catch (err) {
+            catch (err: any) {
                 if (i === 0) {
                     // the first requests should fail with a timeout status and the circuit should be half-open at this point
                     expect(err.code).toBe(RequestErrorCode.timeout);
@@ -206,7 +206,7 @@ describe("request circuit breaker", () => {
                 await request.invoke().thenUse(circuitBreaker.metrics);
                 fail();
             }
-            catch (err) {
+            catch (err: any) {
             }
         }
 
@@ -252,7 +252,7 @@ describe("request circuit breaker", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             // 1 for the initial request and 2 for the retry attempts
             expect(count).toBe(3);
             // the retry interceptor will prevent the request from throwing an error until all the retry attempts
@@ -284,7 +284,7 @@ describe("request circuit breaker", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             // in this use-case the retry interceptor performs its retries before the circuit breaker tracks error/success
             // so even though the request will fail multiple times the circuit breaker only captures 1 failure and will thus still be closed
             expect(err.code).toBe(RequestErrorCode.timeout);

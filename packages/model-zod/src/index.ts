@@ -9,8 +9,8 @@ type ZodParseResult<T> = ZodSuccessResult<T> | ZodErrorResult;
 export function createValidation<TAttributes extends IModelAttributes, TModel extends IModel<TAttributes>>(schema: zod.Schema<TAttributes>): IModelValidation<TAttributes, TModel> {
     return {
         validateAttribute: (model, attribute) => {
-            const result = isZodObject(schema)
-                ? schema.pick({ [attribute]: true }).safeParse(model)
+            const result: ZodParseResult<any> = isZodObject(schema)
+                ? schema.pick(<{ [k in keyof TAttributes]?: true | undefined; }>{ [attribute]: true }).safeParse(model)
                 : schema.safeParse(model);
 
             if (!isSuccess(result)) {

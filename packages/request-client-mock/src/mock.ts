@@ -3,10 +3,10 @@ jest.mock("axios");
 jest.genMockFromModule("eventsource");
 jest.mock("eventsource");
 
-import axios, { AxiosError, AxiosPromise, AxiosRequestConfig, AxiosResponse } from "axios";
+import axios, { AxiosError, AxiosHeaders, AxiosPromise, AxiosRequestConfig, AxiosResponse } from "axios";
 import EventSource, { EventSourceInitDict } from "eventsource";
 import * as HttpStatus from "http-status-codes";
-import { mocked } from "ts-jest/utils";
+import { fn, mocked, MockedFunction } from "jest-mock";
 import * as url from "url";
 import client, { IEventStreamOptions, IRequestClient, IRequestOptions } from "@sprig/request-client/dist/polyfill";
 
@@ -42,12 +42,12 @@ interface IMockEventSource extends EventSource {
 const requests = new Map<string, IRequestOptions>();
 const responses = new Map<string, IMockResponse>();
 
-const mockAxiosIsError = mocked(axios.isAxiosError).mockImplementation(payload => {
+const mockAxiosIsError = mocked(axios.isAxiosError).mockImplementation(<T = any, D = any>(payload: any): payload is AxiosError<T, D> => {
     return typeof payload === "object" && payload.isAxiosError === true;
 });
 
 const mockRequest = mocked(axios.request);    
-mockRequest.mockImplementation(config => {
+mockRequest.mockImplementation(<T = unknown, R = AxiosResponse<T, any>, D = any>(config: AxiosRequestConfig<D>) => {
     const url = config.url || "/";
     const currentRequest = requests.get(url);
 
@@ -57,7 +57,7 @@ mockRequest.mockImplementation(config => {
 
     invokedRequests.push(currentRequest);
 
-    const axiosResponse = toAxiosResponse(currentRequest, getResponse(currentRequest));
+    const axiosResponse = toAxiosResponse<T>(currentRequest, getResponse(currentRequest));
     const isValid = Array.isArray(currentRequest.expectedStatus)
         ? currentRequest.expectedStatus.indexOf(axiosResponse.status) > -1
         : currentRequest.expectedStatus
@@ -65,21 +65,21 @@ mockRequest.mockImplementation(config => {
             : axiosResponse.status >= 200 && axiosResponse.status < 300; // default axios behavior
     
     if (isValid) {
-        return Promise.resolve(axiosResponse);
+        return Promise.resolve(<R>axiosResponse);
     }
 
     const error = new Error("mock error") as AxiosError;
     (<any>error).isAxiosError = true;
     error.response = axiosResponse;
     error.request = axiosResponse.request;
-    error.config = {};
+    error.config = { headers: new AxiosHeaders() };
 
     return Promise.reject(error);    
 });
 
 const mockEventSource = mocked(EventSource);
 mockEventSource.mockImplementation((url, options) => new class implements EventSource {
-    private readonly listeners = new Map<string, EventListener[]>();
+    private readonly listeners = new Map<string, ((evt: MessageEvent) => void)[]>();
     private readonly pending: any[] = [];
     private _readyState = 0;
 
@@ -90,15 +90,11 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
     readonly url = url;
     readonly withCredentials = false;
 
-    onopen!: (evt: MessageEvent) => any;
-    onmessage!: (evt: MessageEvent) => any;
-    onerror!: (evt: MessageEvent) => any;
+    onopen = fn<(evt: MessageEvent) => any>();
+    onmessage = fn<(evt: MessageEvent) => any>();
+    onerror = fn<(evt: MessageEvent) => any>();
 
     constructor() {
-        (<any>this).onopen = null;
-        (<any>this).onmessage = null;
-        (<any>this).onerror = null;
-
         eventSourceInstances.push(this);
         setTimeout(() => this.connect(), 0);
     }
@@ -107,12 +103,12 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
         return this._readyState;
     }
 
-    addEventListener(type: string, listener: EventListener): void {
+    addEventListener = <MockedFunction<(type: string, listener: (evt: MessageEvent) => void) => void>>fn<(type: string, listener: (evt: MessageEvent) => void) => void>((type, listener) => {
         const callbacks = this.listeners.get(type) || [];
         this.listeners.set(type, [...callbacks, listener]);
-    }
+    });
 
-    dispatchEvent(evt: Event): boolean {
+    dispatchEvent = <MockedFunction<(evt: Event) => boolean>>fn<(evt: Event) => boolean>(evt => {
         const callback = (<any>this)["on" + evt.type];
         if (callback !== null) {
             callback(evt);
@@ -120,32 +116,27 @@ mockEventSource.mockImplementation((url, options) => new class implements EventS
 
         const callbacks = this.listeners.get(evt.type);
         if (callbacks) {
-            callbacks.forEach(callback => callback(evt));
+            callbacks.forEach(callback => callback(<MessageEvent>evt));
         }
 
         return true;
-    }
+    });
 
-    removeEventListener(type: string, listener?: EventListener): void {
-        if (!listener) {
-            this.listeners.set(type, []);
-        }
-        else {
-            const callbacks = this.listeners.get(type);
-            if (callbacks) {
-                for (let i = 0; i < callbacks.length; i++) {
-                    if (callbacks[i] === listener) {
-                        callbacks.splice(i, 1);
-                        break;
-                    }
+    removeEventListener = <MockedFunction<(type: string, listener: (evt: MessageEvent) => void) => void>>fn<(type: string, listener: (evt: MessageEvent) => void) => void>((type, listener) => {
+        const callbacks = this.listeners.get(type);
+        if (callbacks) {
+            for (let i = 0; i < callbacks.length; i++) {
+                if (callbacks[i] === listener) {
+                    callbacks.splice(i, 1);
+                    break;
                 }
             }
         }
-    }
+    });
 
-    close(): void {
+    close = <MockedFunction<() => void>>fn<() => void>(() => {
         this._readyState = this.CLOSED;
-    }
+    });
 
     sendMessage(data: any): void {
         setTimeout(() => {
@@ -298,13 +289,13 @@ function normalizePath(path: string): string {
     return path;
 }
 
-function toAxiosResponse(request: IRequestOptions, response: IMockResponse): AxiosResponse {
+function toAxiosResponse<T = unknown>(request: IRequestOptions, response: IMockResponse): AxiosResponse<T> {
     return {
         data: response.data || {},
         status: response.status || 200,
         statusText: HttpStatus.getStatusText(response.status || 200),
         headers: response.headers || {},
-        config: {},
+        config: { headers: new AxiosHeaders() },
         request: {
             url: request.url,
             method: request.method,

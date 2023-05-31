@@ -38,7 +38,7 @@ describe("client request mock", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe("http-error");
             expect(err.response).toBeDefined();
             expect(err.response.status).toBe(400);
@@ -61,7 +61,7 @@ describe("client request mock", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe("http-error");
             expect(err.response).toBeDefined();
             expect(err.response.status).toBe(403);
@@ -296,24 +296,26 @@ describe("client request mock", () => {
 describe("client stream mock", () => {
     beforeEach(mockClear);
 
-    test("mock response", async done => {
+    test("mock response", done => {
         // a simple test to ensure the mock is hooking into the EventSource properly
         mockResponse({ 
             status: 200,
             data: { foo: "bar" }
         });
 
-        const result = await client.stream({
+        client.stream({
             method: "GET",
             url: "http://localhost"
         })
-        .invoke();
-
-        const source = <EventSource>result.data;
-        source.onmessage = e => {
-            expect(e.data.foo).toBe("bar");
-            done();
-        };
+        .invoke()
+        .then(result => {
+            const source = <EventSource>result.data;
+            source.onmessage = e => {
+                expect(e.data.foo).toBe("bar");
+                done();
+            };
+        })
+        .catch(err => done(err));
     });
 
     test("mock response with bad request status", async () => {
@@ -333,29 +335,31 @@ describe("client stream mock", () => {
         expect(error!.response!.status).toBe(406);
     });
     
-    test("send multiple messages", async done => {
+    test("send multiple messages", done => {
         const context = mockResponse({ 
             status: 200,
             data: { foo: "bar" }
         });
 
-        const result = await client.stream({
+        client.stream({
             method: "GET",
             url: "http://localhost"
         })
-        .invoke();
-
-        let count = 0;
-        const source = <EventSource>result.data;
-        source.onmessage = e => {
-            count++;
-            if (count === 3) {
-                done();
-            }
-        };
-
-        // this needs to be sent after the onmessage has been attached
-        context.sendEventSourceMessage({ foo: "bar" });
-        context.sendEventSourceMessage({ foo: "bar" });
+        .invoke()
+        .then(result => {
+            let count = 0;
+            const source = <EventSource>result.data;
+            source.onmessage = e => {
+                count++;
+                if (count === 3) {
+                    done();
+                }
+            };
+    
+            // this needs to be sent after the onmessage has been attached
+            context.sendEventSourceMessage({ foo: "bar" });
+            context.sendEventSourceMessage({ foo: "bar" });
+        })
+        .catch(err => done(err));
     });
 });

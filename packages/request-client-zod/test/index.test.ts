@@ -65,7 +65,7 @@ describe("validate", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(err.code).toBe(RequestErrorCode.invalidResponse);
         }
     });

@@ -1,6 +1,4 @@
-// the commented import uses the Polyfill that has dependency on node js so a webpack polyfill would be required (https://www.npmjs.com/package/node-polyfill-webpack-plugin)
-// import client from "@sprig/request-client";
-import client from "@sprig/request-client/dist/native";
+import client from "@sprig/request-client";
 import { ReadyState, RequestEventStream } from "@sprig/request-client-events";
 
 let listener;

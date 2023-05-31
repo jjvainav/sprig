@@ -29,7 +29,7 @@ describe("request retry", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(countBefore).toBe(4); // one for the first request and three retries
             expect(countAfter).toBe(1);
             expect(err.code).toBe(RequestErrorCode.httpError);
@@ -59,7 +59,7 @@ describe("request retry", () => {
 
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(countBefore).toBe(4); // one for the first request and three retries
             expect(countAfter).toBe(1);
             expect(err.code).toBe(RequestErrorCode.httpError);
@@ -90,7 +90,7 @@ describe("request retry", () => {
             
             fail();
         }
-        catch(err) {
+        catch(err: any) {
             expect(count).toBe(3);
             expect(err.code).toBe(RequestErrorCode.httpError);
             expect(err.response).toBeDefined();

@@ -80,7 +80,7 @@ describe("sequential async queue", () => {
             await queue.push(() => { throw new Error("test") });
             fail();
         }
-        catch (err) {
+        catch (err: any) {
             expect((<Error>err).message).toBe("test");
         }
     });
