@@ -19,7 +19,7 @@
         "create-id": "node cli.js"
     },
     "dependencies": {
-        "base-x": "^3.0.7",
-        "uuid": "^3.3.3"
+        "base-x": "4.0.0",
+        "uuid": "9.0.0"
     }
 }

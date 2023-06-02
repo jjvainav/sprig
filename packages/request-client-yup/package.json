@@ -22,7 +22,7 @@
     },
     "dependencies": {
         "@sprig/request-client": "0.2.4",
-        "yup": "^1.2.0"
+        "yup": "1.2.0"
     },
     "devDependencies": {
         "@sprig/request-client-mock": "0.2.4"

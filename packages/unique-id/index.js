@@ -1,12 +1,12 @@
 "use strict";
 
-var uuid = require("uuid/v4");
-var baseX = require("base-x");
-var base62 = baseX("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
+const { v4: uuid } = require("uuid");
+const baseX = require("base-x");
+const base62 = baseX("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
 
 /** Creates a base62 encoded uuid with an optional length. */
 module.exports = function createId(len) {
-    var buffer = Buffer.alloc(16);
+    const buffer = Buffer.alloc(16);
     uuid(null, buffer, 0);
 
     var id = base62.encode(buffer);

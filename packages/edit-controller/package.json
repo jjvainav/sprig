@@ -26,6 +26,6 @@
         "@sprig/model": "0.2.4"
     },
     "devDependencies": {
-        "zod": "^3.2.0"
+        "zod": "3.21.4"
     }
 }

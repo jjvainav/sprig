@@ -24,6 +24,6 @@
         "@sprig/event-emitter": "0.2.4"
     },
     "devDependencies": {
-        "jest-environment-jsdom": "^29.5.0"
+        "jest-environment-jsdom": "29.5.0"
     }
 }
