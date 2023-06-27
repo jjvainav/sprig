@@ -1,6 +1,7 @@
 ﻿import { AsyncQueue } from "@sprig/async-queue";
 import { IEditOperation } from "@sprig/edit-operation";
 import { IEditChannelPublisher } from "@sprig/edit-queue";
+import { EventEmitter, IEvent } from "@sprig/event-emitter";
 import { EditStack, IEditStackResult } from "./edit-stack";
 
 export interface IEditHistory {
@@ -10,14 +11,21 @@ export interface IEditHistory {
     readonly isRedo: boolean;
     /** True when in the process of undoing an edit. */
     readonly isUndo: boolean;
+    /** An event that is raised during a redo operation. */
+    readonly onRedo: IEvent<IUndoRedoResult>;
+    /** An event that is raised during an undo operation. */
+    readonly onUndo: IEvent<IUndoRedoResult>;
     /** Determines if there are any edits that can be reverted. */
     canUndo(): boolean;
     /** Determines if there are any edits that can be re-published. */
     canRedo(): boolean;
     /** Reverts one level of edits. */
-    undo(): Promise<IEditStackResult | undefined>;
+    undo(): Promise<IUndoRedoResult | undefined>;
     /** Republishes one level of edits. */
-    redo(): Promise<IEditStackResult | undefined>;
+    redo(): Promise<IUndoRedoResult | undefined>;
+}
+
+export interface IUndoRedoResult extends IEditStackResult {
 }
 
 /** 
@@ -26,6 +34,8 @@ export interface IEditHistory {
  * a previous undo/redo to complete before invoking undo/redo again.
  */
 export class EditHistory implements IEditHistory {
+    private readonly redoEvent = new EventEmitter<IUndoRedoResult>();
+    private readonly undoEvent = new EventEmitter<IUndoRedoResult>();
     private readonly editStack = new EditStack();
     private readonly queue = new AsyncQueue<IEditStackResult | undefined>();
 
@@ -46,6 +56,14 @@ export class EditHistory implements IEditHistory {
 
     get isRedo(): boolean {
         return this._isRedo;
+    }
+
+    get onRedo(): IEvent<IUndoRedoResult> {
+        return this.redoEvent.event;
+    }
+
+    get onUndo(): IEvent<IUndoRedoResult> {
+        return this.undoEvent.event;
     }
 
     canUndo(): boolean {
@@ -75,28 +93,34 @@ export class EditHistory implements IEditHistory {
         return this.editStack.remove(checkpoint);
     }
 
-    undo(): Promise<IEditStackResult | undefined> {
+    undo(): Promise<IUndoRedoResult | undefined> {
         return this.queueUndoRedo(
             this.canUndo.bind(this),
             () => this._isUndo = true,
             () => this._isUndo = false,
-            this.editStack.undo.bind(this.editStack));
+            this.editStack.undo.bind(this.editStack),
+            this.undoEvent);
     }
 
-    redo(): Promise<IEditStackResult | undefined> {
+    redo(): Promise<IUndoRedoResult | undefined> {
         return this.queueUndoRedo(
             this.canRedo.bind(this),
             () => this._isRedo = true,
             () => this._isRedo = false,
-            this.editStack.redo.bind(this.editStack));
+            this.editStack.redo.bind(this.editStack),
+            this.redoEvent);
     }
 
-    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (publisher: IEditChannelPublisher) => Promise<IEditStackResult | undefined>): Promise<IEditStackResult | undefined> {
+    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (publisher: IEditChannelPublisher) => Promise<IUndoRedoResult | undefined>, emitter: EventEmitter<IUndoRedoResult>): Promise<IUndoRedoResult | undefined> {
         return this.queue.push(() => {
             if (canUndoRedo()) {
                 start();
 
                 return invoke(this.outgoing).then(result => {
+                    if (result) {
+                        emitter.emit(result);
+                    }
+
                     end();
                     return result;
                 });

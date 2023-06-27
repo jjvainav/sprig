@@ -1,7 +1,7 @@
 ﻿import "jest";
 import { IEditOperation } from "@sprig/edit-operation";
 import { EditQueue, IEditChannel, IEditDispatcher } from "@sprig/edit-queue";
-import { EditHistory } from "../src";
+import { EditHistory, IUndoRedoResult } from "../src";
 
 const dispatcher: IEditDispatcher = edit => new Promise(resolve => setTimeout(() => {
     resolve({ 
@@ -13,6 +13,10 @@ const dispatcher: IEditDispatcher = edit => new Promise(resolve => setTimeout(()
 
 function createEdit(): IEditOperation {
     return { type: "mock.edit", data: {} };
+}
+
+function createReverseEdit(): IEditOperation {
+    return { type: "mock.reverse", data: {} };
 }
 
 function createEditHistory(queue: EditQueue, channelToMonitor: IEditChannel): EditHistory {
@@ -32,7 +36,7 @@ describe("edit history", () => {
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
-    
+
         await publisher.publish(createEdit());
         const result = await history.undo();
 
@@ -144,11 +148,14 @@ describe("edit history", () => {
         const history = createEditHistory(queue, channel);
 
         await publisher.publish(createEdit());
+        await publisher.publish(createEdit());
+        await history.undo();
         await history.undo();
         await publisher.publish(createEdit());
 
         expect(history.canUndo()).toBeTruthy();
         expect(history.canRedo()).toBeFalsy();
+        expect(history.checkpoint).toBe(3);
     });
 
     test("canUndo when history is empty", () => {
@@ -211,5 +218,73 @@ describe("edit history", () => {
         await publisher.publish(createEdit());
 
         expect(history.canRedo()).toBeFalsy();
+    });
+
+    test("verify checkpoint during channel observer", async () => {
+        const queue = new EditQueue(dispatcher);
+        const channel = queue.createChannel();
+        const history = new EditHistory(channel.createPublisher());
+
+        const checkpoints: (number | undefined)[] = [];
+        channel.createObserver().on(result => checkpoints.push(history.checkpoint));
+
+        history.push(createReverseEdit());
+        history.push(createReverseEdit());
+
+        await history.undo();
+        await history.undo();
+
+        // the observer gets invoked after the undo operation
+        expect(checkpoints[0]).toBe(1);
+        expect(checkpoints[1]).toBeUndefined();
+    });
+
+    test("verify checkpoint during undo/redo events", async () => {
+        const queue = new EditQueue(dispatcher);
+        const channel = queue.createChannel();
+        const publisher = channel.createPublisher();
+        const history = createEditHistory(queue, channel);
+
+        const checkpoints: (number | undefined)[] = [];
+        const results: IUndoRedoResult[] = [];
+
+        history.onRedo(result => results.push(result));
+        history.onUndo(result => results.push(result));
+
+        await publisher.publish(createEdit());
+        checkpoints.push(history.checkpoint);
+
+        await publisher.publish(createEdit());
+        checkpoints.push(history.checkpoint);
+        
+        await history.undo();
+        checkpoints.push(history.checkpoint);
+
+        await history.undo();
+        checkpoints.push(history.checkpoint);
+
+        await history.redo();
+        checkpoints.push(history.checkpoint);
+
+        await history.redo();
+        checkpoints.push(history.checkpoint);
+
+        // the checkpoint is incremented after every publish
+        expect(checkpoints[0]).toBe(1);
+        expect(checkpoints[1]).toBe(2);
+        // after the undo the checkpoint is expected to point backwards in the stack
+        expect(checkpoints[2]).toBe(1);
+        // the history is expected to be empty at this point so the checkpoint should be undefined
+        expect(checkpoints[3]).toBeUndefined();
+        // the checkpoint should be reset after each redo
+        expect(checkpoints[4]).toBe(1);
+        expect(checkpoints[5]).toBe(2);
+
+        // the checkpoint associated with the edit that was undone
+        expect(results[0].checkpoint).toBe(2);
+        expect(results[1].checkpoint).toBe(1);
+        // the checkpoint associated with the edit that was redone
+        expect(results[2].checkpoint).toBe(1);
+        expect(results[3].checkpoint).toBe(2);
     });
 });
