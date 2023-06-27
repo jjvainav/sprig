@@ -6,6 +6,10 @@ import { EditStack, IEditStackResult } from "./edit-stack";
 export interface IEditHistory {
     /** A pointer into the current edit stack or undefined if the stack is empty. */
     readonly checkpoint: number | undefined;
+    /** True when in the process of redoing an edit. */
+    readonly isRedo: boolean;
+    /** True when in the process of undoing an edit. */
+    readonly isUndo: boolean;
     /** Determines if there are any edits that can be reverted. */
     canUndo(): boolean;
     /** Determines if there are any edits that can be re-published. */

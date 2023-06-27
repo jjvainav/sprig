@@ -77,7 +77,7 @@ export class EditQueue implements IEditQueue {
         const extendPublisher = options && options.extend && options.extend.publisher || (publisher => publisher);
 
         return new class EditChannel implements IEditChannel {
-            private readonly editDispatched = new EventEmitter<IEditDispatchResult>("channel-edit-dispatched");
+            private readonly editDispatched = new EventEmitter<IEditDispatchResult>();
 
             readonly isPrivate = options !== undefined && options.isPrivate === true;
 
