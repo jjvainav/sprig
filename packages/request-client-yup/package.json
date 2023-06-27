@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-yup",
     "description": "Provides a request client response handler for validating response data using yup.",
-    "version": "0.2.5",
+    "version": "0.2.6",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,10 +21,10 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.2.5",
+        "@sprig/request-client": "0.2.6",
         "yup": "1.2.0"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.2.5"
+        "@sprig/request-client-mock": "0.2.6"
     }
 }
