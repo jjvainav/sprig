@@ -10,7 +10,7 @@ interface IMockEdit extends IEditOperation {
     };
 }
 
-const mockDispatcher: IEditDispatcher = edit => {
+const mockDispatcher: IEditDispatcher<IEditOperation> = edit => {
     const reverse: IMockEdit = {
         type: "mock",
         data: { 
@@ -34,7 +34,7 @@ function createEdit(name?: string): IMockEdit {
 
 describe("edit stack", () => {
     test("undo with single edit on stack", async () => {
-        const queue = new EditQueue(mockDispatcher);
+        const queue = new EditQueue({ dispatcher: mockDispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const stack = new EditStack();
@@ -55,7 +55,7 @@ describe("edit stack", () => {
     });
 
     test("undo multiple edits", async () => {
-        const queue = new EditQueue(mockDispatcher);
+        const queue = new EditQueue({ dispatcher: mockDispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const stack = new EditStack();
@@ -81,7 +81,7 @@ describe("edit stack", () => {
     });
 
     test("undo and then redo", async () => {
-        const queue = new EditQueue(mockDispatcher);
+        const queue = new EditQueue({ dispatcher: mockDispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const stack = new EditStack();
@@ -104,7 +104,7 @@ describe("edit stack", () => {
     });
 
     test("current stack pointer", async () => {
-        const queue = new EditQueue(mockDispatcher);
+        const queue = new EditQueue({ dispatcher: mockDispatcher });
         const stack = new EditStack();
 
         expect(stack.current).toBeUndefined();

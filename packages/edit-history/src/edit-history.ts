@@ -19,6 +19,10 @@ export interface IEditHistory {
     canUndo(): boolean;
     /** Determines if there are any edits that can be re-published. */
     canRedo(): boolean;
+    /** Manually pushes a reverse edit onto the stack. */
+    push(reverse: IEditOperation, state?: any): boolean;
+    /** Allows removing an edit from the history at the specified checkpoint without publishing. */
+    remove(checkpoint: number): boolean;
     /** Reverts one level of edits. */
     undo(): Promise<IUndoRedoResult | undefined>;
     /** Republishes one level of edits. */
@@ -42,7 +46,8 @@ export class EditHistory implements IEditHistory {
     private _isUndo = false;
     private _isRedo = false;
 
-    constructor(private readonly outgoing: IEditChannelPublisher) {
+    /** Creates a new EditHistory where edits being published are expected to provide a reverse edit as a response to being processed. */
+    constructor(private readonly outgoing: IEditChannelPublisher<IEditOperation>) {
     }
 
     get checkpoint(): number | undefined {
@@ -78,7 +83,7 @@ export class EditHistory implements IEditHistory {
             this.editStack.canRedo();
     }
 
-    /** Pushes a reverse edit onto the stack. */
+    /** Manually pushes a reverse edit onto the stack. */
     push(reverse: IEditOperation, state?: any): boolean {
         if (!this._isUndo && !this._isRedo) {
             this.editStack.push(reverse, state);
@@ -111,7 +116,7 @@ export class EditHistory implements IEditHistory {
             this.redoEvent);
     }
 
-    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (publisher: IEditChannelPublisher) => Promise<IUndoRedoResult | undefined>, emitter: EventEmitter<IUndoRedoResult>): Promise<IUndoRedoResult | undefined> {
+    private queueUndoRedo(canUndoRedo: () => boolean, start: () => void, end: () => void, invoke: (publisher: IEditChannelPublisher<IEditOperation>) => Promise<IUndoRedoResult | undefined>, emitter: EventEmitter<IUndoRedoResult>): Promise<IUndoRedoResult | undefined> {
         return this.queue.push(() => {
             if (canUndoRedo()) {
                 start();

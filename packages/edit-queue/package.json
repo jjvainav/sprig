@@ -17,7 +17,7 @@
     "scripts": {
         "build": "tsc -b .",
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
-        "test": "jest --silent"
+        "test": "jest"
     },
     "dependencies": {
         "@sprig/async-queue": "0.2.7",

@@ -3,7 +3,7 @@ import { IEditOperation } from "@sprig/edit-operation";
 import { EditQueue, IEditChannel, IEditDispatcher } from "@sprig/edit-queue";
 import { EditHistory, IUndoRedoResult } from "../src";
 
-const dispatcher: IEditDispatcher = edit => new Promise(resolve => setTimeout(() => {
+const dispatcher: IEditDispatcher<IEditOperation> = edit => new Promise(resolve => setTimeout(() => {
     resolve({ 
         type: edit.type === "mock.edit" ? "mock.reverse" : "mock.edit",
         data: {}
@@ -19,7 +19,7 @@ function createReverseEdit(): IEditOperation {
     return { type: "mock.reverse", data: {} };
 }
 
-function createEditHistory(queue: EditQueue, channelToMonitor: IEditChannel): EditHistory {
+function createEditHistory(queue: EditQueue<IEditOperation>, channelToMonitor: IEditChannel<IEditOperation>): EditHistory {
     const history = new EditHistory(queue.createChannel().createPublisher());
     channelToMonitor.createObserver().on(result => {
         if (result.success && result.response) {
@@ -32,7 +32,7 @@ function createEditHistory(queue: EditQueue, channelToMonitor: IEditChannel): Ed
 
 describe("edit history", () => {
     test("undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -48,7 +48,7 @@ describe("edit history", () => {
     });
 
     test("redo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -65,7 +65,7 @@ describe("edit history", () => {
     });
 
     test("undo and then redo without waiting for undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -84,7 +84,7 @@ describe("edit history", () => {
     });
 
     test("isUndo during undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -101,7 +101,7 @@ describe("edit history", () => {
     });
 
     test("isUndo during multiple undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -124,7 +124,7 @@ describe("edit history", () => {
     });
 
     test("isRedo during redo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -142,7 +142,7 @@ describe("edit history", () => {
     });
 
     test("publish new edit after undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -159,14 +159,14 @@ describe("edit history", () => {
     });
 
     test("canUndo when history is empty", () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const history = createEditHistory(queue, channel);
         expect(history.canUndo()).toBeFalsy();
     });
 
     test("canUndo after publishing edit", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -177,7 +177,7 @@ describe("edit history", () => {
     });
 
     test("canUndo after undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -189,7 +189,7 @@ describe("edit history", () => {
     });
 
     test("canRedo after undo", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -201,14 +201,14 @@ describe("edit history", () => {
     });
 
     test("canRedo when history is empty", () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const history = createEditHistory(queue, channel);
         expect(history.canRedo()).toBeFalsy();
     });
 
     test("canRedo after publishing edit", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);
@@ -221,7 +221,7 @@ describe("edit history", () => {
     });
 
     test("verify checkpoint during channel observer", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const history = new EditHistory(channel.createPublisher());
 
@@ -240,7 +240,7 @@ describe("edit history", () => {
     });
 
     test("verify checkpoint during undo/redo events", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const history = createEditHistory(queue, channel);

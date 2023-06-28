@@ -55,13 +55,16 @@ export class EditStack {
     }
 
     /** Pushes an edit onto the stack and optional state that will be associated with the current checkpoint of the stack. */
-    push(edit: IEditOperation, state?: any): void {
-        this.undoStack.push({ edit, state, checkpoint: this.nextCheckpoint++ });
+    push(edit: IEditOperation, state?: any): IEditStackItem {
+        const item: IEditStackItem = { edit, state, checkpoint: this.nextCheckpoint++ };
+        this.undoStack.push(item);
         this.redoStack.length = 0;
         
         while (this.undoStack.length > this.size) {
             this.undoStack.shift();
         }
+
+        return item;
     }
 
     canUndo(): boolean {
@@ -72,15 +75,15 @@ export class EditStack {
         return this.redoStack.length > 0;
     }
 
-    undo(publisher: IEditChannelPublisher): Promise<IEditStackResult | undefined> {
+    undo(publisher: IEditChannelPublisher<IEditOperation>): Promise<IEditStackResult | undefined> {
         return this.handleUndoRedo(publisher, this.undoStack, this.redoStack);
     }
 
-    redo(publisher: IEditChannelPublisher): Promise<IEditStackResult | undefined> {
+    redo(publisher: IEditChannelPublisher<IEditOperation>): Promise<IEditStackResult | undefined> {
         return this.handleUndoRedo(publisher, this.redoStack, this.undoStack);
     }
 
-    private handleUndoRedo(publisher: IEditChannelPublisher, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditStackResult | undefined> {
+    private handleUndoRedo(publisher: IEditChannelPublisher<IEditOperation>, source: IEditStackItem[], target: IEditStackItem[]): Promise<IEditStackResult | undefined> {
         const item = source.pop();
 
         if (item) {

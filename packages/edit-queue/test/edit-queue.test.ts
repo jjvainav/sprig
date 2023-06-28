@@ -25,7 +25,7 @@ const dispatcher: IEditDispatcher = edit => {
 
     return delay(() => error ? Promise.reject(new Error()) : Promise.resolve(response), amount);
 };
-const observeDispatcher = <TResponse = void>(out: IEditOperation[], dispatcher: IEditDispatcher): IEditDispatcher => {
+const observeDispatcher = (out: IEditOperation[], dispatcher: IEditDispatcher): IEditDispatcher => {
     return edit => dispatcher(edit).then(result => {
         out.push(edit);
         return result;
@@ -52,7 +52,7 @@ function delay<TReturn = void>(fn: () => TReturn, amount: number): Promise<TRetu
 
 describe("edit queue", () => {
     test("publish edit to channel", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const edit = createEdit();
@@ -72,7 +72,7 @@ describe("edit queue", () => {
     });
 
     test("publish edit to private channel", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel({ isPrivate: true });
         const publisher = channel.createPublisher();
         const edit = createEdit();
@@ -93,7 +93,7 @@ describe("edit queue", () => {
     test("publish edit to extended channel", async () => {
         let flag = false;
 
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel({ 
             isPrivate: true,
             extend: {
@@ -120,7 +120,7 @@ describe("edit queue", () => {
     });
 
     test("publish edit to channel and observe", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const publisher = channel.createPublisher();
@@ -139,7 +139,7 @@ describe("edit queue", () => {
     });
 
     test("publish edit to channel with response", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const edit = createEdit({ response: "foo" });
@@ -154,7 +154,7 @@ describe("edit queue", () => {
     });
 
     test("publish edit to channel with error thrown from dispatcher", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         const edit = createEdit({ error: true, response: "foo" });
@@ -170,7 +170,7 @@ describe("edit queue", () => {
 
     test("publish multiple edits to channel and ensure dispatched in proper order", async () => {
         const out: IMockEditOperation[] = [];
-        const queue = new EditQueue(observeDispatcher(out, dispatcher));
+        const queue = new EditQueue({ dispatcher: observeDispatcher(out, dispatcher) });
         const channel = queue.createChannel();
         const publisher = channel.createPublisher();
         
@@ -185,8 +185,43 @@ describe("edit queue", () => {
         expect(out[1].data.value).toBe("edit 2");
     });
 
+    test("publish multiple edits to multiple channels and ensure dispatched in proper queue order", async () => {
+        const out: IMockEditOperation[] = [];
+        const queue = new EditQueue({ dispatcher: observeDispatcher(out, dispatcher), order: "queue" });
+        const channel1 = queue.createChannel();
+        const channel2 = queue.createChannel();
+        const channel3 = queue.createChannel();
+        const publisher1 = channel1.createPublisher();
+        const publisher2 = channel2.createPublisher();
+        const publisher3 = channel3.createPublisher();
+
+        const results = await Promise.all([
+            publisher1.publish(createEdit({ delay: 0, value: "edit 1" })),
+            publisher1.publish(createEdit({ delay: 0, value: "edit 2" })),
+            publisher2.publish(createEdit({ delay: 0, value: "edit 3" })),
+            publisher2.publish(createEdit({ delay: 0, value: "edit 4" })),
+            publisher3.publish(createEdit({ delay: 0, value: "edit 5" })),
+            publisher3.publish(createEdit({ delay: 0, value: "edit 6" }))
+        ]);
+        
+        expect(results[0].success).toBe(true);
+        expect(results[1].success).toBe(true);
+        expect(results[2].success).toBe(true);
+        expect(results[3].success).toBe(true);
+        expect(results[4].success).toBe(true);
+        expect(results[5].success).toBe(true);
+
+        expect(out).toHaveLength(6);
+        expect(out[0].data.value).toBe("edit 1");
+        expect(out[1].data.value).toBe("edit 2");
+        expect(out[2].data.value).toBe("edit 3");
+        expect(out[3].data.value).toBe("edit 4");
+        expect(out[4].data.value).toBe("edit 5");
+        expect(out[5].data.value).toBe("edit 6");
+    });
+
     test("publish multiple edits to channel and ensure observed in proper order", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const publisher = channel.createPublisher();
@@ -206,7 +241,7 @@ describe("edit queue", () => {
     });
 
     test("publish multiple edits using different publishers for the same channel", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const publisher1 = channel.createPublisher();
@@ -227,7 +262,7 @@ describe("edit queue", () => {
     });
 
     test("publish multiple async edits to channel", async () => {
-        const queue = new EditQueue(dispatcher);
+        const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
         const observer = channel.createObserver();
         const publisher = channel.createPublisher();
@@ -248,7 +283,7 @@ describe("edit queue", () => {
 
     test("publish edits using multiple channels", async () => {
         const queueOut: IMockEditOperation[] = [];
-        const queue = new EditQueue(observeDispatcher(queueOut, dispatcher));
+        const queue = new EditQueue({ dispatcher: observeDispatcher(queueOut, dispatcher) });
         const channel1 = queue.createChannel();
         const channel2 = queue.createChannel();
 
