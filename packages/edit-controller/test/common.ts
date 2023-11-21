@@ -1,4 +1,5 @@
 import { IEditOperation } from "@sprig/edit-operation";
+import { IEditChannelPublisher } from "@sprig/edit-queue";
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
 import { EditController, IApplyEditResult, IEditController, IEditEvent, IEditEventStream, IEditEventStreamData, IModel, ISubmitEditResult, Synchronizer } from "../src";
 
@@ -105,6 +106,15 @@ export interface IUpdateChild extends IEditOperation {
     readonly type: "update";
     readonly data: {
         readonly value: string;
+    };
+}
+
+export function toEditHistoryPublisher(publisher: IEditChannelPublisher<IApplyEditResult>): IEditChannelPublisher<IEditOperation> {
+    return {
+        publish: edit => publisher.publish(edit).then(result => ({
+            ...result,
+            response: result.response?.reverse
+        }))
     };
 }
 

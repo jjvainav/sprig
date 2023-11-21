@@ -3,7 +3,12 @@ import { IEditOperation } from "@sprig/edit-operation";
 import { EditQueue, IEditChannel, IEditDispatcher } from "@sprig/edit-queue";
 import { EditHistory, IUndoRedoResult } from "../src";
 
-const dispatcher: IEditDispatcher<IEditOperation> = edit => new Promise(resolve => setTimeout(() => {
+const dispatcher: IEditDispatcher<IEditOperation> = edit => new Promise((resolve, reject) => setTimeout(() => {
+    if (edit.type === "mock.error") {
+        console.log("ERROR");
+        reject(new Error());
+    }
+
     resolve({ 
         type: edit.type === "mock.edit" ? "mock.reverse" : "mock.edit",
         data: {}
@@ -13,6 +18,10 @@ const dispatcher: IEditDispatcher<IEditOperation> = edit => new Promise(resolve 
 
 function createEdit(): IEditOperation {
     return { type: "mock.edit", data: {} };
+}
+
+function createErrorEdit(): IEditOperation {
+    return { type: "mock.error", data: {} };
 }
 
 function createReverseEdit(): IEditOperation {
@@ -80,6 +89,24 @@ describe("edit history", () => {
         expect(result!.success).toBe(true);
 
         expect(history.canUndo()).toBe(true);
+        expect(history.canRedo()).toBe(false);
+    });
+
+    test("undo an edit that causes the dispatcher to throw an error", async () => {
+        const queue = new EditQueue({ dispatcher });
+        const channel = queue.createChannel();
+        const history = createEditHistory(queue, channel);
+
+        history.push(createErrorEdit());
+        const canUndo = history.canUndo();
+        const result = await history.undo();
+
+        expect(canUndo).toBe(true);
+        expect(result).toBeDefined();
+        expect(result!.success).toBe(false);
+        expect(result!.error).toBeDefined();
+        
+        expect(history.canUndo()).toBe(false);
         expect(history.canRedo()).toBe(false);
     });
 

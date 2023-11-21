@@ -1,4 +1,5 @@
-import { Edits, IChild, IInitChild, IInitTest, MockApi, MockEditEventStream, MockEditStore, TestController, TestModel } from "./common";
+import { EditHistory } from "../../edit-history";
+import { Edits, IChild, IInitChild, IInitTest, MockApi, MockEditEventStream, MockEditStore, toEditHistoryPublisher, TestController, TestModel } from "./common";
 
 interface ITestContext {
     readonly controller: TestController;
@@ -651,5 +652,159 @@ describe("edit controller", () => {
         expect(contexts[2].controller.model.bar).toBeUndefined();
         expect(contexts[3].controller.model.foo).toBeUndefined();
         expect(contexts[3].controller.model.bar).toBeUndefined();
+    });
+
+    // the tests below test the integration of the EditHistory and EditController
+    test("Undo a published edit", async () => {
+        const { controller, store } = createTestContext();
+        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+        
+        const result1 = await controller.update("foo", "bar");
+        const result2 = await controller.update("foo2", "bar2");
+
+        history.push(result1.reverse!);
+        history.push(result2.reverse!);
+
+        const undoResult = await history.undo();
+        await controller.waitForIdle();
+
+        expect(undoResult).toBeDefined();
+        expect(undoResult!.success).toBe(true);
+
+        // just to make sure the history is in the expected state
+        expect(history.canUndo()).toBe(true);
+        expect(history.canRedo()).toBe(true);
+
+        expect(controller.model.foo).toBe("foo");
+        expect(controller.model.bar).toBe("bar");
+        expect(controller.model.revision).toBe(4);
+
+        const edits = store.getRecords(controller.modelType, controller.model.id);
+        expect(edits.length).toBe(4);
+        expect(edits[3].edit.type).toBe("update");
+        expect(edits[3].revision).toBe(4);
+    });
+
+    test("Undo an edit after receiving an edit from the stream", async () => {
+        const { controller, store, stream } = createTestContext();
+        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+
+        const result1 = await controller.update("foo", "bar");
+        const result2 = await controller.update("foo2", "bar2");
+
+        await controller.waitForEdit(result1.edit);
+        await controller.waitForEdit(result2.edit);
+
+        history.push(result1.reverse!);
+        history.push(result2.reverse!);
+
+        // simulate saving an edit and pushing it from the server to the client
+        const edit = Edits.createUpdateTestEdit("foo", "bar3");
+        const revision = store.addEdit(controller.modelType, controller.model.id, edit);
+
+        // wait until after the event was pushed so that the background processing of the edit can start
+        await stream.pushEvent({ 
+            modelType: controller.modelType,
+            modelId: controller.model.id,
+            edit,
+            timestamp: Date.now(),
+            revision
+        });
+
+        await controller.waitForIdle();
+        const snapshot = controller.model.bar;
+
+        // undo after the edit was received from the stream
+        const undoResult = await history.undo();
+        await controller.waitForIdle();
+
+        expect(undoResult).toBeDefined();
+        expect(undoResult!.success).toBe(true);
+
+        // just to make sure the history is in the expected state
+        expect(history.canUndo()).toBe(true);
+        expect(history.canRedo()).toBe(true);
+
+        // this makes sure the value was updated from the stream as expected
+        expect(snapshot).toBe("bar3");
+        expect(controller.model.foo).toBe("foo");
+        expect(controller.model.bar).toBe("bar");
+        expect(controller.model.revision).toBe(5);
+    });
+
+    test("Undo and then redo an edit after receiving an edit from the stream", async () => {
+        const { controller, store, stream } = createTestContext();
+        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+
+        const result1 = await controller.update("foo", "bar");
+        const result2 = await controller.update("foo2", "bar2");
+
+        await controller.waitForEdit(result1.edit);
+        await controller.waitForEdit(result2.edit);
+
+        history.push(result1.reverse!);
+        history.push(result2.reverse!);
+
+        // simulate saving an edit and pushing it from the server to the client
+        const edit = Edits.createUpdateTestEdit("foo", "bar3");
+        const revision = store.addEdit(controller.modelType, controller.model.id, edit);
+
+        // wait until after the event was pushed so that the background processing of the edit can start
+        await stream.pushEvent({ 
+            modelType: controller.modelType,
+            modelId: controller.model.id,
+            edit,
+            timestamp: Date.now(),
+            revision
+        });
+
+        await controller.waitForIdle();
+
+        const undoResult = await history.undo();
+        const redoResult = await history.redo();
+
+        await controller.waitForIdle();
+
+        expect(undoResult).toBeDefined();
+        expect(undoResult!.success).toBe(true);
+
+        expect(redoResult).toBeDefined();
+        expect(redoResult!.success).toBe(true);
+
+        // just to make sure the history is in the expected state
+        expect(history.canUndo()).toBe(true);
+        expect(history.canRedo()).toBe(false);
+
+        expect(controller.model.foo).toBe("foo");
+        // the undo will set bar back to 'bar' and capture the value of 'bar3' an associate that with the reverse edit
+        expect(controller.model.bar).toBe("bar3");
+        expect(controller.model.revision).toBe(6);
+    });
+
+    test("Undo an unrecognized edit", async () => {
+        const { controller, store } = createTestContext();
+        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+        
+        await controller.update("foo", "bar");
+
+        history.push({ type: "unknown", data: {} });
+        const undoResult = await history.undo();
+        await controller.waitForIdle();
+
+        expect(undoResult).toBeDefined();
+        expect(undoResult!.success).toBe(true);
+
+        // just to make sure the history will discard the unknown/invalid edit
+        expect(history.canUndo()).toBe(false);
+        expect(history.canRedo()).toBe(false);
+
+        expect(controller.model.foo).toBe("foo");
+        expect(controller.model.bar).toBe("bar");
+        expect(controller.model.revision).toBe(2);
+
+        const edits = store.getRecords(controller.modelType, controller.model.id);
+        expect(edits.length).toBe(2);
+        expect(edits[1].edit.type).toBe("update");
+        expect(edits[1].revision).toBe(2);
     });
 });

@@ -62,10 +62,8 @@ describe("edit queue", () => {
         const result = await publisher.publish(edit);
 
         expect(event).toBeDefined();
-        expect(event!.channel).toBe(channel);
 
         expect(result.success).toBe(true);
-        expect(result.channel).toBe(channel);
         expect(result.edit).toBe(edit);
         expect(result.error).toBeUndefined();
         expect(result.response).toBeUndefined();
@@ -84,7 +82,6 @@ describe("edit queue", () => {
 
         expect(flag).toBe(false);
         expect(result.success).toBe(true);
-        expect(result.channel).toBe(channel);
         expect(result.edit).toBe(edit);
         expect(result.error).toBeUndefined();
         expect(result.response).toBeUndefined();
@@ -113,7 +110,6 @@ describe("edit queue", () => {
 
         expect(flag).toBe(true);
         expect(result.success).toBe(true);
-        expect(result.channel).toBe(channel);
         expect(result.edit).toBe(edit);
         expect(result.error).toBeUndefined();
         expect(result.response).toBeUndefined();
@@ -147,7 +143,6 @@ describe("edit queue", () => {
         const result = await publisher.publish(edit);
 
         expect(result.success).toBe(true);
-        expect(result.channel).toBe(channel);
         expect(result.edit).toBe(edit);
         expect(result.error).toBeUndefined();
         expect(result.response).toBe("foo");
@@ -162,7 +157,6 @@ describe("edit queue", () => {
         const result = await publisher.publish(edit);
 
         expect(result.success).toBe(false);
-        expect(result.channel).toBe(channel);
         expect(result.edit).toBe(edit);
         expect(result.error).toBeDefined();
         expect(result.response).toBeUndefined();

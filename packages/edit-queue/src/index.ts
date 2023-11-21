@@ -16,7 +16,6 @@ export interface IEditDispatcher<TResponse = void> {
 /** Defines the result of an edit that was dispatched. */
 export interface IEditDispatchResult<TResponse = any> {
     readonly success: boolean;
-    readonly channel: IEditChannel<TResponse>;
     readonly edit: IEditOperation;
     readonly error?: any;
     readonly response?: TResponse;
@@ -114,8 +113,8 @@ export class EditQueue<TResponse = void> implements IEditQueue<TResponse> {
         const channelEditDispatched = new EventEmitter<IEditDispatchResult<TChannelResponse>>();
         const push = (channel: IEditChannel<any>, edit: IEditOperation): Promise<IEditDispatchResult<TResponse>> => {
             return new Promise(resolve => dispatchQueue.push(() => this.dispatcher(edit)
-                .then(response => resolve({ success: true, channel, edit, response }))
-                .catch(error => resolve({ success: false, channel, edit, error }))));
+                .then(response => resolve({ success: true, edit, response }))
+                .catch(error => resolve({ success: false, edit, error }))));
         };
 
         const basePublisher: IEditChannelPublisher<any> = {

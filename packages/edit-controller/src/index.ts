@@ -1,6 +1,6 @@
 import { AsyncQueue } from "@sprig/async-queue";
 import { IEditOperation } from "@sprig/edit-operation";
-import { EditQueue, IEditChannel, IEditQueue } from "@sprig/edit-queue";
+import { EditQueue, IEditChannel, IEditChannelPublisher, IEditQueue } from "@sprig/edit-queue";
 import { EventEmitter, IEvent, IEventListener } from "@sprig/event-emitter";
 
 /** A callback that handles applying an edit operation and return a reverse edit. */
@@ -37,6 +37,8 @@ export interface IEditController<TModel extends IModel = IModel> {
     applyEdit(edit: IEditOperation, revision?: number): Promise<IApplyEditResult>;
     /** Connects the stream used by the underlying process manager. */
     connectStream(): void;
+    /** Creates a publisher that can be used to publish edits against the model. */
+    createPublisher(): IEditChannelPublisher<IApplyEditResult>;
     /** Disconnects the stream used by the underlying process manager. */
     disconnectStream(): void;
     getApplyHandler<TEdit extends IEditOperation>(edit: TEdit): IApplyEditHandler<TEdit> | undefined;
@@ -109,6 +111,8 @@ export interface IEditHandlers<TEdit extends IEditOperation = IEditOperation> {
 /** Manages the process of handling edits as they are received from a stream and applied/submitted. */
 export interface IEditProcessManager {
     connectStream(): void;
+    /** Creates a publisher that can be used to publish edits for the specified model. */
+    createPublisher(modelType: string, modelId: string): IEditChannelPublisher<IApplyEditResult>;
     disconnectStream(): void;
     /** Queues an edit to be processed and returns a promise that will wait until it has been applied. */
     publishEdit(modelType: string, modelId: string, edit: IEditOperation, revision?: number): Promise<IApplyEditResult>;
@@ -232,6 +236,10 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
         this.processManager.connectStream();
     }
 
+    createPublisher(): IEditChannelPublisher<IApplyEditResult> {
+        return this.processManager.createPublisher(this.modelType, this.model.id);
+    }
+
     disconnectStream(): void {
         this.processManager.disconnectStream();
     }
@@ -309,6 +317,8 @@ export class EditProcessManager implements IEditProcessManager {
     private readonly submitQueue: IEditQueue<ISubmitEditResult>;
     private readonly applyChannel: IEditChannel<IApplyEditResult>;
     private readonly submitChannel: IEditChannel<ISubmitEditResult>;
+    private readonly applyChannelPublisher: IEditChannelPublisher<IApplyEditResult>;
+    private readonly submitChannelPublisher: IEditChannelPublisher<ISubmitEditResult>;
 
     private readonly eventQueue = new AsyncQueue();
     private nextOrder = 1;
@@ -320,9 +330,11 @@ export class EditProcessManager implements IEditProcessManager {
     constructor(private readonly getController: IEditControllerProvider, private readonly stream?: IEditEventStream) {
         this.applyQueue = new EditQueue<IApplyEditResult>(edit => this.applyEdit(edit));
         this.applyChannel = this.applyQueue.createChannel();
+        this.applyChannelPublisher = this.applyChannel.createPublisher();
 
         this.submitQueue = new EditQueue<ISubmitEditResult>(edit => this.submitEdit(edit));
         this.submitChannel = this.submitQueue.createChannel();
+        this.submitChannelPublisher = this.submitChannel.createPublisher();
     }
 
     connectStream(): void {
@@ -349,6 +361,18 @@ export class EditProcessManager implements IEditProcessManager {
         }
     }
 
+    createPublisher(modelType: string, modelId: string): IEditChannelPublisher<IApplyEditResult> {
+        return { 
+            publish: edit => this.publishEdit(modelType, modelId, edit)
+                .then(response => ({
+                    success: true,
+                    channel: this.applyChannel,
+                    edit,
+                    response 
+                }))
+        };
+    }
+
     disconnectStream(): void {
         if (this.streamListener) {
             this.streamListener.remove();
@@ -359,12 +383,12 @@ export class EditProcessManager implements IEditProcessManager {
     publishEdit(modelType: string, modelId: string, edit: IEditOperation, revision?: number): Promise<IApplyEditResult> {
         const controller = this.getController(modelType, modelId);
         if (!controller) {
-            throw new Error(`Controller not found for model type (${modelType}) with id (${modelId}).`);
+            return Promise.resolve({ success: false, edit, error: new Error(`Controller not found for model type (${modelType}) with id (${modelId}).`) });
         }
 
         const apply = controller.getApplyHandler(edit);
         if (!apply) {
-            throw new Error(`Apply handler not found for edit (${edit.type}).`);
+            return Promise.resolve({ success: false, edit, error: new Error(`Apply handler not found for edit (${edit.type}).`) });
         }
 
         // if a revision number is provided use a submit handler that just returns the revision
@@ -373,15 +397,16 @@ export class EditProcessManager implements IEditProcessManager {
             : controller.getSubmitHandler(edit);
 
         if (!submit) {
-            throw new Error(`Submit handler not found for edit (${edit.type}).`);
+            return Promise.resolve({ success: false, edit, error: new Error(`Submit handler not found for edit (${edit.type}).`) });
         }
 
         const context = this.createEditContext(modelType, modelId, edit, apply, submit, revision);
-        return this.applyChannel.createPublisher().publish(edit)
+        return this.applyChannelPublisher.publish(edit)
             .then(result => result.response && result.response || { success: false, edit, error: result.error })
             .catch(error => {
-                context.done({ success: false, edit, error: new Error(`Failed to apply edit (${edit.type}).`, { cause: error }) });
-                throw error;
+                const result = { success: false, edit, error: new Error(`Failed to apply edit (${edit.type}).`, { cause: error }) };
+                context.done(result);
+                return result;
             });
     }
 
@@ -439,7 +464,7 @@ export class EditProcessManager implements IEditProcessManager {
         // save the reverse edit in case it is needed while trying to submit
         context.reverse = result.reverse;
         this.lastEditApplied = edit;
-        this.submitChannel.createPublisher().publish(edit);
+        this.submitChannelPublisher.publish(edit);
         return result;
     }
 
