@@ -7,6 +7,7 @@
     "include": ["src"],
     "references": [
         { "path": "../async-queue" },
-        { "path": "../model" }
+        { "path": "../edit-history" },
+        { "path": "../edit-queue" },
     ]
 }

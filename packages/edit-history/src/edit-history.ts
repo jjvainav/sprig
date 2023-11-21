@@ -83,7 +83,7 @@ export class EditHistory implements IEditHistory {
             this.editStack.canRedo();
     }
 
-    /** Manually pushes a reverse edit onto the stack. */
+    /** Pushes an edit onto the stack that will be published to the outgoing channel during an undo as a reverse edit. */
     push(reverse: IEditOperation, state?: any): boolean {
         if (!this._isUndo && !this._isRedo) {
             this.editStack.push(reverse, state);

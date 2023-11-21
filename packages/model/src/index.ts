@@ -4,7 +4,7 @@ type ModelKeys<TAttributes> = {
 
 export type ChildModelAttribute = undefined | IModel | IModel[];
 
-/** Maps an model attributes for a parent model. */
+/** Maps a model attributes for a parent model. */
 export type ModelMap<TAttributes> = Pick<TAttributes, ModelKeys<TAttributes>>;
 
 /** A set of errors for a model keyed by the model's property containing the error. */

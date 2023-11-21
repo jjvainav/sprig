@@ -10,6 +10,10 @@ export interface IAsyncTask<T> {
     (): Promise<T>;
 }
 
+interface IPendingTask {
+    start(): void;
+}
+
 interface IScheduledTask<T> {
     readonly task: IAsyncTask<T>;
     readonly promise: Promise<T>;
@@ -84,6 +88,7 @@ export class AsyncQueue<T = void> {
     private readonly idle = new EventEmitter("queue-idle");
     private readonly tasks = new Set<IScheduledTask<T>>();
     private readonly scheduler: IQueueScheduler<T>;
+    private pending?: IPendingTask[];
 
     private _isAborted = false;
 
@@ -103,6 +108,10 @@ export class AsyncQueue<T = void> {
         return !this.tasks.size;
     }
 
+    get isPaused(): boolean {
+        return !!this.pending;
+    }
+
     /** 
      * Aborts any processing/queued items and prevents queued items from being executed. 
      * Once aborted the queue will no longer accept tasks.
@@ -112,12 +121,47 @@ export class AsyncQueue<T = void> {
         this.tasks.forEach(task => task.cancel());
     }
 
+    /** Returns true if there are pending tasks when the queue is paused. Note, if the queue is paused it will most likely also be idle. */
+    hasPendingTasks(): boolean {
+        return !!this.pending && !!this.pending.length;
+    }
+
+    /** Causes the queue to queue tasks but pause scheduling until resumed. */
+    pause(): void {
+        this.pending = this.pending || [];
+    }
+
     push(task: IAsyncTask<T>): Promise<T> {
         if (this._isAborted) {
             throw new Error("The queue has been aborted");
         }
 
-        return this.add(this.scheduler(task)).promise;
+        const schedule = () => this.add(this.scheduler(task)).promise;
+        if (this.pending) {
+            return new Promise((resolve, reject) => {
+                this.pending!.push({
+                    start: () => schedule()
+                        .then(result => resolve(result))
+                        .catch(error => reject(error))
+                });
+            });
+        }
+
+        return schedule();
+    }
+
+    /** Resumes all pending tasks that have been queued while paused. */
+    resume(): void {
+        if (this.pending) {
+            this.pending.forEach(task => task.start());
+            this.pending = undefined;
+        }
+    }
+
+    waitForIdle(): Promise<void> {
+        return this.isIdle ? Promise.resolve() : new Promise(resolve => {
+            this.onIdle.once(() => resolve());
+        });
     }
 
     private add(task: IScheduledTask<T>): IScheduledTask<T> {

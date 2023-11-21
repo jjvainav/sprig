@@ -40,12 +40,20 @@ export interface IEditQueueOptions<TResponse = void> {
 
 /** A channel for publishing and consuming edits. */
 export interface IEditChannel<TResponse = void> {
+    /** True if the channel is currently paused. */
+    readonly isPaused: boolean;
     /** True if the edit channel is private; meaning, edits dispatched against this channel will not be broadcast via the queue's edit dispatched event. */
     readonly isPrivate: boolean;
     /** Creates an object that acts as a consumer of dispatched edits that were published against the current channel. */
     createObserver(): IEditChannelObserver<TResponse>;
     /** Creates an object that publishes edits using the current channel to be dispatched. */
     createPublisher(): IEditChannelPublisher<TResponse>;
+    /** Pauses the underlying dispatch queue causing edits to queue up but not be dispatched until resumed. */
+    pause(): void;
+    /** Resumes a paused channel allowing pending edits to be dispatched. */
+    resume(): void;
+    /** Waits for the edit channel to become idle. */
+    waitForIdle(): Promise<void>;
 }
 
 /** Provides a mechanism for extending an edit channel. */
@@ -68,7 +76,7 @@ export interface IEditChannelObserver<TResponse = void> extends IEvent<IEditDisp
 
 /** An object responsible for publishing edits for dispatch. */
 export interface IEditChannelPublisher<TResponse = void> {
-    /** Publishes an edit to the queue. */
+    /** Publishes an edit onto the queue immediately and returns a promise to wait for the final dispatch result of the request. */
     publish(edit: IEditOperation): Promise<IEditDispatchResult<TResponse>>;
 }
 
@@ -121,6 +129,9 @@ export class EditQueue<TResponse = void> implements IEditQueue<TResponse> {
         };
 
         const channel: IEditChannel<TChannelResponse> = {
+            get isPaused() {
+                return dispatchQueue.isPaused;
+            },
             isPrivate: options !== undefined && options.isPrivate === true,
             createObserver: () => extendObserver(channelEditDispatched.event),
             createPublisher: () => {
@@ -132,7 +143,10 @@ export class EditQueue<TResponse = void> implements IEditQueue<TResponse> {
                         return result;
                     }) 
                 };
-            }
+            },
+            pause: () => dispatchQueue.pause(),
+            resume: () => dispatchQueue.resume(),
+            waitForIdle: () => dispatchQueue.waitForIdle()
         };
 
         return channel;

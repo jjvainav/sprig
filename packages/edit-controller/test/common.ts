@@ -1,9 +1,6 @@
 import { IEditOperation } from "@sprig/edit-operation";
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
-import { Model, IModel, IModelValidation } from "@sprig/model";
-import { createValidation } from "@sprig/model-zod";
-import * as zod from "zod";
-import { ApplyResult, EditController, IEditEvent, IEditEventStream, IEditEventStreamData, IPublishEditQueue, IPublishEditResult, SubmitResult } from "../src";
+import { EditController, IApplyEditResult, IEditController, IEditEvent, IEditEventStream, IEditEventStreamData, IModel, ISubmitEditResult, Synchronizer } from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -22,7 +19,6 @@ export interface ITestAttributes {
     readonly bar?: string;
     readonly children?: IChildModel[];
     readonly items: string[];
-    readonly timestamp?: number;
     readonly revision: number;
 }
 
@@ -40,10 +36,9 @@ export interface IChild {
     readonly revision: number; 
 }
 
-export interface ITestModel extends IModel<ITestAttributes>, ITestAttributes {
+export interface ITestModel extends IModel, ITestAttributes {
     foo?: string;
     bar?: string;
-    timestamp?: number;
 
     addChild(child: IChildModel): void;
     addItem(item: string): void;
@@ -51,7 +46,7 @@ export interface ITestModel extends IModel<ITestAttributes>, ITestAttributes {
     removeItem(item: string): string | undefined;
 }
 
-export interface IChildModel extends IModel<IChildAttributes>, IChildAttributes {
+export interface IChildModel extends IModel, IChildAttributes {
     value: string;
 }
 
@@ -124,22 +119,22 @@ export namespace Edits {
     export const createUpdateTestEdit = (foo: string, bar: string): IUpdateTest => ({ type: "update", data: { foo, bar } });
 }
 
-export class TestModel extends Model<ITestAttributes> implements ITestModel {
+export class TestModel implements ITestModel {
     foo?: string;
     bar?: string;
+    revision: number;
     
+    readonly id: string;
     readonly children?: IChildModel[];
     readonly items: string[] = [];
 
-    constructor(attributes?: ITestAttributes) {
-        super(attributes && attributes.id, attributes && attributes.revision);
-
-        if (attributes) {
-            this.foo = attributes.foo;
-            this.bar = attributes.bar;
-            this.children = attributes.children;
-            this.items = attributes.items;
-        }
+    constructor(attributes: ITestAttributes) {
+        this.id = attributes.id;
+        this.foo = attributes.foo;
+        this.bar = attributes.bar;
+        this.children = attributes.children;
+        this.items = attributes.items;
+        this.revision = attributes.revision;
     }
 
     addChild(child: IChildModel): void {
@@ -173,34 +168,25 @@ export class TestModel extends Model<ITestAttributes> implements ITestModel {
         return undefined;
     }
 
-    protected getValidation(): IModelValidation<ITestAttributes, this> {
-        return createValidation(zod.object({
-            id: zod.string(),
-            foo: zod.string().optional(),
-            bar: zod.string().optional(),
-            children: zod.array(zod.any()).optional(),
-            items: zod.array(zod.string()),
-            revision: zod.number()
-        }));
+    setRevision(revision: number): void {
+        this.revision = revision;
     }
 }
 
-export class ChildModel extends Model<IChildAttributes> implements IChildModel {
+export class ChildModel implements IChildModel {
     value: string = "";
+    revision: number;
+    
+    readonly id: string;
 
-    constructor(attributes?: IChildAttributes) {
-        super(attributes && attributes.id, attributes && attributes.revision);
-
-        if (attributes) {
-            this.value = attributes.value;
-        }
+    constructor(attributes: IChildAttributes) {
+        this.id = attributes.id;
+        this.value = attributes.value;
+        this.revision = attributes.revision;
     }
 
-    protected getValidation(): IModelValidation<IChildAttributes, this> {
-        return createValidation(zod.object({
-            id: zod.string(),
-            value: zod.string().nonempty("Value is required.")
-        }));
+    setRevision(revision: number): void {
+        this.revision = revision;
     }
 }
 
@@ -234,25 +220,23 @@ export class MockEditStore {
     }
 
     getRecords(modelType: string, modelId: string, startRevision?: number): IEditRecord[] {
-        const result: IEditRecord[] = [];
-        this.records.forEach(record => {
-            if (record.modelType === modelType && record.modelId === modelId) {
-                result.push(record);
-            }
-        });
+        const result: IEditRecord[] = this.getEditsForModel(modelType, modelId);
+        return startRevision ? result.filter(record => record.revision >= startRevision) : result;
+    }
 
-        // assume the revisions are in order and sequential
-        return startRevision ? result.slice(startRevision - 1) : result;
+    /** Randomize the order of the records stored. Useful for testing edits that get out of order. */
+    randomize(): void {
+        this.records.sort(() => Math.random() > .5 ? 1 : -1);
+    }
+
+    private getEditsForModel(modelType: string, modelId: string): IEditRecord[] {
+        return this.records.filter(record => record.modelType === modelType && record.modelId === modelId);
     }
 
     private getNextRevisionNumber(modelType: string, modelId: string): number {
-        for (let i = this.records.length - 1; i >= 0; i--) {
-            if (this.records[i].modelType === modelType && this.records[i].modelId === modelId) {
-                return this.records[i].revision + 1;
-            }
-        }
-
-        return 1;
+        const result: IEditRecord[] = this.getEditsForModel(modelType, modelId);
+        result.sort((a, b) => a.revision - b.revision);
+        return result.length > 0 ? result[result.length - 1].revision + 1 : 1;
     }
 }
 
@@ -282,10 +266,13 @@ export class MockEditEventStream implements IEditEventStream {
 }
 
 export class ChildController extends EditController<IChildModel> {
-    modelType = "child";
-
-    constructor(private readonly store: MockEditStore, model: IChildModel, queue: IPublishEditQueue) {
-        super(model, queue);
+    constructor(private readonly store: MockEditStore, model: IChildModel, parent: EditController) {
+        super({ 
+            model, 
+            modelType: "child",
+            processManager: parent.processManager,
+            synchronizer: new Synchronizer((_, __, startRevision) => this.fetchEdits(startRevision))
+        });
 
         this.registerEditHandlers("update", {
             apply: this.applyUpdate.bind(this),
@@ -293,11 +280,11 @@ export class ChildController extends EditController<IChildModel> {
         });
     }
 
-    updateValue(value: string): Promise<IPublishEditResult> {
+    updateValue(value: string): Promise<IApplyEditResult> {
         return this.publishEdit<IUpdateChild>({ type: "update", data: { value } });
     }
 
-    protected fetchEdits(startRevision?: number): Promise<IEditEvent[]> {
+    private fetchEdits(startRevision?: number): Promise<IEditEvent[]> {
         return new Promise(resolve => setTimeout(() => {
             resolve(this.store.getRecords(this.modelType, this.model.id, startRevision).map(record => ({
                 edit: record.edit,
@@ -308,12 +295,13 @@ export class ChildController extends EditController<IChildModel> {
         0));
     }
 
-    private applyUpdate(edit: IUpdateChild): ApplyResult<IUpdateChild> {
+    private applyUpdate(edit: IUpdateChild): IApplyEditResult<IUpdateChild> {
         const oldValue = this.model.value;
         this.model.value = edit.data.value;
 
         return { 
             success: true,
+            edit,
             reverse: { 
                 type: "update", 
                 data: { value: oldValue }
@@ -321,19 +309,33 @@ export class ChildController extends EditController<IChildModel> {
         };
     }
 
-    private submitEdit(edit: IEditOperation): Promise<SubmitResult> {
+    private submitEdit(edit: IEditOperation): Promise<ISubmitEditResult> {
         return new Promise(resolve => setTimeout(() => {
-            resolve({ success: true, revision: this.store.addEdit(this.modelType, this.model.id, edit) });
+            resolve({ success: true, edit, revision: this.store.addEdit(this.modelType, this.model.id, edit) });
         }, 
         0));
     }
 }
 
 export class TestController extends EditController<ITestModel> {
+    private failNextApply = false;
+    private failNextSubmit = false;
+    private applyError?: Error;
+    private submitError?: Error;
+    
     modelType = "test";
 
-    constructor(private readonly api: MockApi, private readonly store: MockEditStore, model: ITestModel, streamOrQueue: IEditEventStream | IPublishEditQueue) {
-        super(model, streamOrQueue);
+    constructor(
+        private readonly api: MockApi, 
+        private readonly store: MockEditStore, 
+        model: ITestModel, 
+        stream: IEditEventStream) {
+        super({
+            model,
+            modelType: "test",
+            stream,
+            synchronizer: new Synchronizer((_, __, startRevision) => this.fetchEdits(startRevision))
+        });
 
         this.registerEditHandlers("addChild", {
             apply: this.applyAddChild.bind(this),
@@ -361,23 +363,33 @@ export class TestController extends EditController<ITestModel> {
         });
     }
 
-    addChild(childId: string): Promise<IPublishEditResult> {
+    addChild(childId: string): Promise<IApplyEditResult> {
         return this.publishEdit<IAddChild>({ type: "addChild", data: { childId } });
     }
 
-    addItem(item: string): Promise<IPublishEditResult> {
+    addItem(item: string): Promise<IApplyEditResult> {
         return this.publishEdit<IAddItem>({ type: "addItem", data: { item } });
     }
 
-    removeChild(childId: string): Promise<IPublishEditResult> {
+    failOnNextApply(error?: Error): void {
+        this.failNextApply = true;
+        this.applyError = error;
+    }
+
+    failOnNextSubmit(error?: Error): void {
+        this.failNextSubmit = true;
+        this.submitError = error;
+    }
+
+    removeChild(childId: string): Promise<IApplyEditResult> {
         return this.publishEdit<IRemoveChild>({ type: "removeChild", data: { childId } });
     }
 
-    removeItem(item: string): Promise<IPublishEditResult> {
+    removeItem(item: string): Promise<IApplyEditResult> {
         return this.publishEdit<IRemoveItem>({ type: "removeItem", data: { item } });
     }
 
-    update(foo: string, bar: string): Promise<IPublishEditResult> {
+    update(foo: string, bar: string): Promise<IApplyEditResult> {
         return this.publishEdit<IUpdateTest>({ type: "update", data: { foo, bar } });
     }
 
@@ -392,98 +404,163 @@ export class TestController extends EditController<ITestModel> {
         0));
     }
 
-    protected getController(data: IEditEventStreamData): EditController | undefined {
-        if (data.modelType === "child") {
+    protected getController(modelType: string, modelId: string): IEditController | undefined {
+        if (modelType === "child") {
             if (this.model.children) {
                 for (const child of this.model.children) {
-                    if (child.id === data.modelId) {
-                        return new ChildController(this.store, child, this.editQueue);
+                    if (child.id === modelId) {
+                        return new ChildController(this.store, child, this);
                     }
                 }
             }
         }
 
-        return this;
+        return super.getController(modelType, modelId);
     }
 
-    private async applyAddChild(edit: IAddChild): Promise<ApplyResult<IRemoveChild>> {
-        const child = await this.api.getChild(edit.data.childId);
+    private async applyAddChild(edit: IAddChild): Promise<IApplyEditResult<IRemoveChild>> {
+        return this.tryApplyAsyncEdit(edit, async () => {
+            const child = await this.api.getChild(edit.data.childId);
 
-        if (child) {
-            this.model.addChild(new ChildModel(child));
+            if (child) {
+                this.model.addChild(new ChildModel(child));
 
-            return {
-                success: true,
-                reverse: { type: "removeChild", data: edit.data }
-            };
-        }
-
-        return { 
-            success: false,
-            error: new Error(`Failed to fetch child (${edit.data.childId}).`)
-        };
-    }
-
-    private applyAddItem(edit: IAddItem): ApplyResult<IRemoveItem> {
-        this.model.addItem(edit.data.item);
-
-        return {
-            success: true,
-            reverse: { type: "removeItem", data: edit.data }
-        };
-    }
-
-    private applyRemoveChild(edit: IRemoveChild): ApplyResult<IAddChild> {
-        const child = this.model.removeChild(edit.data.childId);
-
-        if (child) {
-            return {
-                success: true,
-                reverse: { type: "addChild", data: edit.data }
-            };
-        }
-
-        return { 
-            success: false,
-            error: new Error(`Child not found (${edit.data.childId}).`)
-        };
-    }
-
-    private applyRemoveItem(edit: IAddItem): ApplyResult<IAddItem> {
-        const item = this.model.removeItem(edit.data.item);
-
-        if (item) {
-            return {
-                success: true,
-                reverse: { type: "addItem", data: edit.data }
-            };
-        }
-
-        return { 
-            success: false,
-            error: new Error(`Item not found (${edit.data.item}).`)
-        };
-    }
-
-    private applyUpdate(edit: IUpdateTest, timestamp: number): ApplyResult<IUpdateTest> {
-        const reverse: IUpdateTest = { 
-            type: "update", 
-            data: { 
-                foo: this.model.foo, 
-                bar: this.model.bar 
+                return {
+                    success: true,
+                    edit,
+                    reverse: { type: "removeChild", data: edit.data }
+                };
             }
-        };
 
-        this.model.foo = edit.data.foo;
-        this.model.bar = edit.data.bar;
-        this.model.timestamp = timestamp;
-
-        return { success: true, reverse };
+            return { 
+                success: false,
+                edit,
+                error: new Error(`Failed to fetch child (${edit.data.childId}).`)
+            };
+        });
     }
 
-    private submitEdit(edit: IEditOperation): Promise<SubmitResult> {
-        return new Promise(resolve => setTimeout(() => {
-            resolve({ success: true, revision: this.store.addEdit(this.modelType, this.model.id, edit) });
+    private applyAddItem(edit: IAddItem): IApplyEditResult<IRemoveItem> {
+        return this.tryApplyEdit(edit, () => {
+            this.model.addItem(edit.data.item);
+
+            return {
+                success: true,
+                edit,
+                reverse: { type: "removeItem", data: edit.data }
+            };
+        });
+    }
+
+    private applyRemoveChild(edit: IRemoveChild): IApplyEditResult<IAddChild> {
+        return this.tryApplyEdit(edit, () => {
+            const child = this.model.removeChild(edit.data.childId);
+
+            if (child) {
+                return {
+                    success: true,
+                    edit,
+                    reverse: { type: "addChild", data: edit.data }
+                };
+            }
+
+            return { 
+                success: false,
+                edit,
+                error: new Error(`Child not found (${edit.data.childId}).`)
+            };
+        });
+    }
+
+    private applyRemoveItem(edit: IAddItem): IApplyEditResult<IAddItem> {
+        return this.tryApplyEdit(edit, () => {
+            const item = this.model.removeItem(edit.data.item);
+
+            if (item) {
+                return {
+                    success: true,
+                    edit,
+                    reverse: { type: "addItem", data: edit.data }
+                };
+            }
+
+            return { 
+                success: false,
+                edit,
+                error: new Error(`Item not found (${edit.data.item}).`)
+            };
+        });
+    }
+
+    private applyUpdate(edit: IUpdateTest): IApplyEditResult<IUpdateTest> {
+        return this.tryApplyEdit(edit, () => {
+            const reverse: IUpdateTest = { 
+                type: "update", 
+                data: { 
+                    foo: this.model.foo, 
+                    bar: this.model.bar 
+                }
+            };
+    
+            this.model.foo = edit.data.foo;
+            this.model.bar = edit.data.bar;
+    
+            return { success: true, edit, reverse };
+        });
+    }
+
+    private submitEdit(edit: IEditOperation): Promise<ISubmitEditResult> {
+        return new Promise((resolve, reject) => setTimeout(() => {
+            if (this.submitError) {
+                reject(this.submitError);
+                this.failNextSubmit = false;
+                this.submitError = undefined;
+                return;
+            }
+
+            if (this.failNextSubmit) {
+                this.failNextSubmit = false;
+                resolve({ success: false, edit });
+                return;
+            }
+
+            resolve({ success: true, edit, revision: this.store.addEdit(this.modelType, this.model.id, edit) });
+        }, 
+        0));
+    }
+
+    private tryApplyEdit<TReverseEdit extends IEditOperation>(edit: IEditOperation, handler: () => IApplyEditResult<TReverseEdit>): IApplyEditResult<TReverseEdit> {
+        if (this.applyError) {
+            const error = this.applyError;
+            this.failNextApply = false;
+            this.applyError = undefined;
+            throw error;
+        }
+
+        if (this.failNextApply) {
+            this.failNextApply = false;
+            return { success: false, edit };
+        }
+
+        return handler();
+    }
+
+    private tryApplyAsyncEdit<TReverseEdit extends IEditOperation>(edit: IEditOperation, handler: () => Promise<IApplyEditResult<TReverseEdit>>): Promise<IApplyEditResult<TReverseEdit>> {
+        return new Promise((resolve, reject) => setTimeout(() => {
+            if (this.applyError) {
+                reject(this.applyError);
+                this.failNextApply = false;
+                this.applyError = undefined;
+                return;
+            }
+
+            if (this.failNextApply) {
+                this.failNextApply = false;
+                resolve({ success: false, edit });
+                return;
+            }
+
+            handler().then(result => resolve(result)).catch(error => reject(error));
         }, 
         0));
     }

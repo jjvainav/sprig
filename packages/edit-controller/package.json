@@ -22,10 +22,10 @@
     },
     "dependencies": {
         "@sprig/async-queue": "0.2.8",
-        "@sprig/edit-operation": "0.2.8",
-        "@sprig/model": "0.2.8"
+        "@sprig/edit-operation": "0.2.8"
     },
     "devDependencies": {
-        "zod": "3.21.4"
+        "@sprig/edit-history": "0.2.8",
+        "@sprig/edit-queue": "0.2.8"
     }
 }

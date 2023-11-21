@@ -261,6 +261,26 @@ describe("edit queue", () => {
         expect(out[1].data.value).toBe("edit 2");
     });
 
+    test("publish multiple edits using different publishers for the same channel and wait for idle", async () => {
+        const queue = new EditQueue({ dispatcher });
+        const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher1 = channel.createPublisher();
+        const publisher2 = channel.createPublisher();
+
+        const out: IMockEditOperation[] = [];
+        observer.on(result => out.push(<IMockEditOperation>result.edit));
+        
+        publisher1.publish(createEdit({ delay: 0, value: "edit 1" }));
+        publisher2.publish(createEdit({ value: "edit 2" }));
+
+        await channel.waitForIdle();
+
+        expect(out).toHaveLength(2);
+        expect(out[0].data.value).toBe("edit 1");
+        expect(out[1].data.value).toBe("edit 2");
+    });
+
     test("publish multiple async edits to channel", async () => {
         const queue = new EditQueue({ dispatcher });
         const channel = queue.createChannel();
@@ -276,6 +296,45 @@ describe("edit queue", () => {
             publisher.publish(createEdit({ delay: 20, value:  "Edit 3" }))
         ]);
 
+        expect(out[0].data.value).toBe("Edit 1");
+        expect(out[1].data.value).toBe("Edit 2");
+        expect(out[2].data.value).toBe("Edit 3");
+    });
+
+    test("publish multiple async edits to channel and pause", async () => {
+        const queue = new EditQueue({ dispatcher });
+        const channel = queue.createChannel();
+        const observer = channel.createObserver();
+        const publisher = channel.createPublisher();
+        
+        const out: IMockEditOperation[] = [];
+        observer.on(result => out.push(<IMockEditOperation>result.edit));
+
+        const promises1 = Promise.all([
+            publisher.publish(createEdit({ delay: 10, value:  "Edit 1" })),
+            publisher.publish(createEdit({ delay: 0, value: "Edit 2" })),
+            publisher.publish(createEdit({ delay: 20, value:  "Edit 3" }))
+        ]);
+
+        channel.pause();
+
+        const promises2 = Promise.all([
+            publisher.publish(createEdit({ delay: 10, value:  "Edit 4" })),
+            publisher.publish(createEdit({ delay: 0, value: "Edit 5" })),
+            publisher.publish(createEdit({ delay: 20, value:  "Edit 6" }))
+        ]);
+
+        await promises1;
+
+        expect(out).toHaveLength(3)
+        expect(out[0].data.value).toBe("Edit 1");
+        expect(out[1].data.value).toBe("Edit 2");
+        expect(out[2].data.value).toBe("Edit 3");
+
+        channel.resume();
+        await promises2;
+
+        expect(out).toHaveLength(6)
         expect(out[0].data.value).toBe("Edit 1");
         expect(out[1].data.value).toBe("Edit 2");
         expect(out[2].data.value).toBe("Edit 3");
