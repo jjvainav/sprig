@@ -414,12 +414,12 @@ export class TestController extends EditController<ITestModel> {
         0));
     }
 
-    protected getController(modelType: string, modelId: string): IEditController | undefined {
+    protected getController(modelType: string, modelId: string): Promise<IEditController | undefined> | IEditController | undefined {
         if (modelType === "child") {
             if (this.model.children) {
                 for (const child of this.model.children) {
                     if (child.id === modelId) {
-                        return new ChildController(this.store, child, this);
+                        return new Promise(resolve => setTimeout(() => resolve(new ChildController(this.store, child, this)), 0));
                     }
                 }
             }

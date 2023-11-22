@@ -71,7 +71,7 @@ export interface IEditControllerOptions<TModel extends IModel> {
 
 /** Defines a callback that will provide a controller for a model. */
 export interface IEditControllerProvider {
-    (modelType: string, modelId: string): IEditController | undefined;
+    (modelType: string, modelId: string): Promise<IEditController | undefined> | IEditController | undefined;
 }
 
 /** Defines an event representing an edit operation that had been applied. */
@@ -159,12 +159,12 @@ interface IEditContext {
     readonly modelType: string;
     readonly modelId: string;
     readonly revision?: number;
-    readonly apply: IApplyEditHandler;
-    readonly submit: ISubmitEditHandler;
     /** Used to track the order of the edit in a queue. */
     order: number;
     /** A reverse edit that can be used to rollback the edit if it has already been applied. */
     reverse?: IEditOperation;
+    /** Submit handler for the edit; this is set when an edit is being applied and used during the submission. */
+    submit?: ISubmitEditHandler;
     done(result: ISubmitEditResult): void;
     wait(): Promise<ISubmitEditResult>;
 }
@@ -278,7 +278,7 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
     }
 
     /** Gets an edit controller for the specified model; this is used when handling parent/child relationships where the child has its own controller. */
-    protected getController(modelType: string, modelId: string): IEditController | undefined {
+    protected getController(modelType: string, modelId: string): Promise<IEditController | undefined> | IEditController | undefined {
         return this.modelType === modelType && this.model.id === modelId ? this : undefined;
     }
 
@@ -335,13 +335,15 @@ export class EditProcessManager implements IEditProcessManager {
         this.submitQueue = new EditQueue<ISubmitEditResult>(edit => this.submitEdit(edit));
         this.submitChannel = this.submitQueue.createChannel();
         this.submitChannelPublisher = this.submitChannel.createPublisher();
+
+        this.eventQueue.onIdle(() => this.emitIfIdle());
     }
 
     connectStream(): void {
         if (this.stream && !this.streamListener) {
             this.streamListener = this.stream.onData(data => {
                 this.eventQueue.push(async () => {
-                    const controller = this.getController(data.modelType, data.modelId);
+                    const controller = await this.getController(data.modelType, data.modelId);
 
                     // ignore the event if the controller is not found or the model for the controller is up to date with the received edit
                     if (controller && controller.model.revision < data.revision) {
@@ -349,11 +351,8 @@ export class EditProcessManager implements IEditProcessManager {
 
                         // TODO: check if the error was due to an unexpected or out of sync revision number
                         if (!result.success) {
-                            const controller = this.getController(data.modelType, data.modelId);
-                            if (controller) {
-                                // if we fail to apply the event synchronize
-                                await this.synchronize(controller);
-                            }
+                            // if we fail to apply the event synchronize
+                            await this.synchronize(controller);
                         }
                     }
                 });
@@ -381,26 +380,7 @@ export class EditProcessManager implements IEditProcessManager {
     }
 
     publishEdit(modelType: string, modelId: string, edit: IEditOperation, revision?: number): Promise<IApplyEditResult> {
-        const controller = this.getController(modelType, modelId);
-        if (!controller) {
-            return Promise.resolve({ success: false, edit, error: new Error(`Controller not found for model type (${modelType}) with id (${modelId}).`) });
-        }
-
-        const apply = controller.getApplyHandler(edit);
-        if (!apply) {
-            return Promise.resolve({ success: false, edit, error: new Error(`Apply handler not found for edit (${edit.type}).`) });
-        }
-
-        // if a revision number is provided use a submit handler that just returns the revision
-        const submit: ISubmitEditHandler | undefined = revision 
-            ? (edit => Promise.resolve({ success: true, edit, revision })) 
-            : controller.getSubmitHandler(edit);
-
-        if (!submit) {
-            return Promise.resolve({ success: false, edit, error: new Error(`Submit handler not found for edit (${edit.type}).`) });
-        }
-
-        const context = this.createEditContext(modelType, modelId, edit, apply, submit, revision);
+        const context = this.createEditContext(modelType, modelId, edit, revision);
         return this.applyChannelPublisher.publish(edit)
             .then(result => result.response && result.response || { success: false, edit, error: result.error })
             .catch(error => {
@@ -433,7 +413,7 @@ export class EditProcessManager implements IEditProcessManager {
             return result;
         };
 
-        const controller = this.getController(context.modelType, context.modelId);
+        const controller = await this.getController(context.modelType, context.modelId);
         if (!controller) {
             return fail(new Error(`Controller not found for model type (${context.modelType}) with id (${context.modelId}).`));
         }
@@ -450,7 +430,23 @@ export class EditProcessManager implements IEditProcessManager {
             }
         }
 
-        const result: IApplyEditResult = await Promise.resolve(context.apply(edit))
+        // grab the apply handler to use below
+        const apply = controller.getApplyHandler(edit);
+        if (!apply) {
+            return fail(new Error(`Apply handler not found for edit (${edit.type}).`));
+        }
+
+        // set the submit handler here so that we can fail early before applying and passing the edit to the submit queue
+        // if a revision number is provided use a submit handler that just returns the revision
+        context.submit = context.revision 
+            ? (edit => Promise.resolve({ success: true, edit, revision: context.revision })) 
+            : controller.getSubmitHandler(edit);
+
+        if (!context.submit) {
+            return fail(new Error(`Submit handler not found for edit (${edit.type}).`));
+        }
+
+        const result: IApplyEditResult = await Promise.resolve(apply(edit))
             .catch(error => ({ 
                 success: false, 
                 edit, 
@@ -468,7 +464,7 @@ export class EditProcessManager implements IEditProcessManager {
         return result;
     }
 
-    private createEditContext(modelType: string, modelId: string, edit: IEditOperation, apply: IApplyEditHandler, submit: ISubmitEditHandler, revision?: number): IEditContext {
+    private createEditContext(modelType: string, modelId: string, edit: IEditOperation, revision?: number): IEditContext {
         let resolve: (result: ISubmitEditResult) => void;
         const promise = new Promise<ISubmitEditResult>(r => resolve = r);
         
@@ -478,8 +474,6 @@ export class EditProcessManager implements IEditProcessManager {
             modelId,
             order: this.nextOrder++,
             revision,
-            apply,
-            submit,
             done: result => {
                 this.removeEditContext(edit);
                 resolve(result);
@@ -499,7 +493,7 @@ export class EditProcessManager implements IEditProcessManager {
     }
 
     private isIdle(): boolean {
-        return !this.editContexts.size && !this.syncPromise;
+        return !this.editContexts.size && !this.syncPromise && this.eventQueue.isIdle;
     }
 
     private async submitEdit(edit: IEditOperation): Promise<ISubmitEditResult> {
@@ -514,7 +508,11 @@ export class EditProcessManager implements IEditProcessManager {
             return result;
         };
 
-        const controller = this.getController(context.modelType, context.modelId);
+        if (!context.submit) {
+            return fail(new Error(`Submit handler not defined for edit (${edit.type}).`));
+        }
+
+        const controller = await this.getController(context.modelType, context.modelId);
         if (!controller) {
             // can't really do much if we can't find the controller so ignore the edit and return an error
             return fail(new Error(`Controller not found for model type (${context.modelType}) with id (${context.modelId}).`));
@@ -571,6 +569,7 @@ export class EditProcessManager implements IEditProcessManager {
             .finally(() => {
                 this.syncPromise = undefined;
                 this.applyChannel.resume();
+                this.emitIfIdle();
             });
     }
 }
