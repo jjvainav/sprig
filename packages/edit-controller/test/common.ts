@@ -1,7 +1,10 @@
 import { IEditOperation } from "@sprig/edit-operation";
 import { IEditChannelPublisher } from "@sprig/edit-queue";
 import { EventEmitter, IEvent } from "@sprig/event-emitter";
-import { EditController, IApplyEditResult, IEditController, IEditEvent, IEditEventStream, IEditEventStreamData, IModel, ISubmitEditResult, Synchronizer } from "../src";
+import { 
+    EditController, IApplyEditResult, IEditController, IEditEvent, IEditEventStream, IEditEventStreamData, 
+    IModel, ISubmitEditResult, Synchronizer 
+} from "../src";
 
 type Mutable<T> = { -readonly[P in keyof T]: T[P] };
 
@@ -291,7 +294,7 @@ export class ChildController extends EditController<IChildModel> {
     }
 
     updateValue(value: string): Promise<IApplyEditResult> {
-        return this.publishEdit<IUpdateChild>({ type: "update", data: { value } });
+        return this.publishEdit<IUpdateChild>({ type: "update", data: { value } }).waitForApply();
     }
 
     private fetchEdits(startRevision?: number): Promise<IEditEvent[]> {
@@ -374,11 +377,11 @@ export class TestController extends EditController<ITestModel> {
     }
 
     addChild(childId: string): Promise<IApplyEditResult> {
-        return this.publishEdit<IAddChild>({ type: "addChild", data: { childId } });
+        return this.publishEdit<IAddChild>({ type: "addChild", data: { childId } }).waitForApply();
     }
 
     addItem(item: string): Promise<IApplyEditResult> {
-        return this.publishEdit<IAddItem>({ type: "addItem", data: { item } });
+        return this.publishEdit<IAddItem>({ type: "addItem", data: { item } }).waitForApply();
     }
 
     failOnNextApply(error?: Error): void {
@@ -392,15 +395,15 @@ export class TestController extends EditController<ITestModel> {
     }
 
     removeChild(childId: string): Promise<IApplyEditResult> {
-        return this.publishEdit<IRemoveChild>({ type: "removeChild", data: { childId } });
+        return this.publishEdit<IRemoveChild>({ type: "removeChild", data: { childId } }).waitForApply();
     }
 
     removeItem(item: string): Promise<IApplyEditResult> {
-        return this.publishEdit<IRemoveItem>({ type: "removeItem", data: { item } });
+        return this.publishEdit<IRemoveItem>({ type: "removeItem", data: { item } }).waitForApply();
     }
 
     update(foo: string, bar: string): Promise<IApplyEditResult> {
-        return this.publishEdit<IUpdateTest>({ type: "update", data: { foo, bar } });
+        return this.publishEdit<IUpdateTest>({ type: "update", data: { foo, bar } }).waitForApply();
     }
 
     protected fetchEdits(startRevision?: number): Promise<IEditEvent[]> {

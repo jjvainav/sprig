@@ -31,6 +31,8 @@ export interface IEditQueue<TResponse = void> {
 
 /** Defines options for creating an edit queue. */
 export interface IEditQueueOptions<TResponse = void> {
+    /** The time, in milliseconds the queue should wait before dispatching the next edit. */
+    readonly delay?: number;
     /** The dispatcher for the queue. */
     readonly dispatcher: IEditDispatcher<TResponse>;
     /** Defines how edits are dispitched inside the queue; the default is 'channel'. */
@@ -83,6 +85,7 @@ export interface IEditChannelPublisher<TResponse = void> {
 export class EditQueue<TResponse = void> implements IEditQueue<TResponse> {
     private readonly editDispatched = new EventEmitter<IEditDispatchResult<TResponse>>();
 
+    private readonly delay?: number;
     private readonly dispatcher: IEditDispatcher<TResponse>;
     private readonly getDispatchQueueForChannel: () => AsyncQueue<any>;
 
@@ -92,6 +95,7 @@ export class EditQueue<TResponse = void> implements IEditQueue<TResponse> {
         const options = typeof dispatcherOrOptions === "object" ? dispatcherOrOptions : { dispatcher: dispatcherOrOptions };
         let queue: AsyncQueue<any> | undefined;
 
+        this.delay = options.delay;
         this.dispatcher = options.dispatcher;
         this.getDispatchQueueForChannel = options.order === "queue" 
             ? () => queue = queue || new AsyncQueue<any>() 
@@ -109,16 +113,22 @@ export class EditQueue<TResponse = void> implements IEditQueue<TResponse> {
         const extendObserver = options && options.extend && options.extend.observer || (observer => observer);
         const extendPublisher = options && options.extend && options.extend.publisher;
 
+        const dispatch = (edit: IEditOperation): Promise<TResponse> => {
+            return this.delay === undefined 
+                ? this.dispatcher(edit) 
+                : new Promise(resolve => setTimeout(() => resolve(this.dispatcher(edit)), this.delay));
+        };
+
         const dispatchQueue = this.getDispatchQueueForChannel();
         const channelEditDispatched = new EventEmitter<IEditDispatchResult<TChannelResponse>>();
-        const push = (channel: IEditChannel<any>, edit: IEditOperation): Promise<IEditDispatchResult<TResponse>> => {
-            return new Promise(resolve => dispatchQueue.push(() => this.dispatcher(edit)
+        const push = (edit: IEditOperation): Promise<IEditDispatchResult<TResponse>> => {
+            return new Promise(resolve => dispatchQueue.push(() => dispatch(edit)
                 .then(response => resolve({ success: true, edit, response }))
                 .catch(error => resolve({ success: false, edit, error }))));
         };
 
         const basePublisher: IEditChannelPublisher<any> = {
-            publish: edit => push(channel, edit).then(result => {
+            publish: edit => push(edit).then(result => {
                 if (!channel.isPrivate) {
                     this.editDispatched.emit(result);
                 }

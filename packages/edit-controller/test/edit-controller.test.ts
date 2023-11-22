@@ -1,5 +1,8 @@
 import { EditHistory } from "../../edit-history";
-import { Edits, IChild, IInitChild, IInitTest, MockApi, MockEditEventStream, MockEditStore, toEditHistoryPublisher, TestController, TestModel } from "./common";
+import { 
+    Edits, IAddChild, IChild, IInitChild, IInitTest, MockApi, MockEditEventStream, MockEditStore, 
+    toEditHistoryPublisher, TestController, TestModel 
+} from "./common";
 
 interface ITestContext {
     readonly controller: TestController;
@@ -62,11 +65,11 @@ describe("edit controller", () => {
         //
         // this is usesful so that the browser/ui can remain responsive and if there is a problem
         // submitting, the edit controller will handle synchronizing the model
-        const endResult = await controller.waitForEdit(applyResult.edit);
+        const submitResult = await controller.waitForSubmit(applyResult.edit);
 
         expect(applyResult.success).toBe(true);
-        expect(endResult).toBeDefined();
-        expect(endResult!.success).toBe(true);
+        expect(submitResult).toBeDefined();
+        expect(submitResult!.success).toBe(true);
 
         expect(controller.model.foo).toBe("foo");
         expect(controller.model.bar).toBe("bar");
@@ -85,11 +88,60 @@ describe("edit controller", () => {
 
         // the add child edit is async because the controller needs to fetch the child data from the 'api'
         const applyResult = await controller.addChild(child.id);
-        const endResult = await controller.waitForEdit(applyResult.edit);
+        const submitResult = await controller.waitForSubmit(applyResult.edit);
 
         expect(applyResult.success).toBe(true);
-        expect(endResult).toBeDefined();
-        expect(endResult!.success).toBe(true);
+        expect(submitResult).toBeDefined();
+        expect(submitResult!.success).toBe(true);
+
+        expect(controller.model.children).toBeDefined();
+        expect(controller.model.children).toHaveLength(1);
+        expect(controller.model.children![0].id).toBe(child.id);
+        expect(controller.model.revision).toBe(2);
+
+        const edits = store.getRecords(controller.modelType, controller.model.id);
+        expect(edits.length).toBe(2);
+        expect(edits[1].edit.type).toBe("addChild");
+        expect(edits[1].revision).toBe(2);
+    });
+
+    test("publish async edit and cancel before it has been applied", async () => {
+        const { controller, store, createChild } = createTestContext();
+
+        const child = createChild("value");
+
+        // the add child edit is async because the controller needs to fetch the child data from the 'api'
+        const context = controller.publishEdit<IAddChild>({ type: "addChild", data: { childId: child.id } });
+        const canceled = context.cancel();
+        
+        const applyResult = await context.waitForApply();
+        const submitResult = await context.waitForSubmit();
+
+        expect(canceled).toBe(true);
+        expect(applyResult.success).toBe(false);
+        expect(submitResult.success).toBe(false);
+
+        expect(controller.model.children).toBeUndefined();
+        expect(controller.model.revision).toBe(1);
+
+        const edits = store.getRecords(controller.modelType, controller.model.id);
+        expect(edits.length).toBe(1);
+    });
+
+    test("publish async edit and cancel after it has been applied", async () => {
+        const { controller, store, createChild } = createTestContext();
+
+        const child = createChild("value");
+
+        // the add child edit is async because the controller needs to fetch the child data from the 'api'
+        const context = controller.publishEdit<IAddChild>({ type: "addChild", data: { childId: child.id } });
+        const applyResult = await context.waitForApply();
+        const canceled = context.cancel();
+        const submitResult = await context.waitForSubmit();
+
+        expect(canceled).toBe(false);
+        expect(applyResult.success).toBe(true);
+        expect(submitResult.success).toBe(true);
 
         expect(controller.model.children).toBeDefined();
         expect(controller.model.children).toHaveLength(1);
@@ -107,7 +159,7 @@ describe("edit controller", () => {
 
         // use an invalid child id to cause the edit to fail
         const applyResult = await controller.addChild("invalid");
-        const submitResult = await controller.waitForEdit(applyResult.edit);
+        const submitResult = await controller.waitForSubmit(applyResult.edit);
 
         expect(applyResult.success).toBe(false);
         expect(submitResult).toBeUndefined();
@@ -121,7 +173,7 @@ describe("edit controller", () => {
 
         controller.failOnNextApply(new Error());
         const applyResult = await controller.addChild(child.id);
-        const submitResult = await controller.waitForEdit(applyResult.edit);
+        const submitResult = await controller.waitForSubmit(applyResult.edit);
 
         expect(applyResult.success).toBe(false);
         expect(submitResult).toBeUndefined();
@@ -193,7 +245,7 @@ describe("edit controller", () => {
         controller.addChild(child1.id);
         controller.addChild(child2.id);
         // wait for the edit to be applied and submitted
-        await controller.addChild(child3.id).then(result => controller.waitForEdit(result.edit));
+        await controller.addChild(child3.id).then(result => controller.waitForSubmit(result.edit));
 
         // make sure the children were added and added in order
         expect(controller.model.children).toBeDefined();
@@ -308,7 +360,7 @@ describe("edit controller", () => {
         const { controller } = createTestContext();
 
         const result = await controller.update("foo", "bar");
-        await controller.waitForEdit(result.edit);
+        await controller.waitForSubmit(result.edit);
 
         controller.failOnNextSubmit();
         const result2 = await controller.update("foo2", "bar2");
@@ -325,7 +377,7 @@ describe("edit controller", () => {
         const { controller } = createTestContext();
 
         const result = await controller.update("foo", "bar");
-        await controller.waitForEdit(result.edit);
+        await controller.waitForSubmit(result.edit);
 
         controller.failOnNextSubmit(new Error("Submit failed."));
         const result2 = await controller.update("foo2", "bar2");
@@ -342,7 +394,7 @@ describe("edit controller", () => {
         const { controller } = createTestContext();
 
         const result = await controller.update("foo", "bar");
-        await controller.waitForEdit(result.edit);
+        await controller.waitForSubmit(result.edit);
 
         // immediately apply another update after the failed update to simulate an edit being applied before the failed edit finished submitting
         // 1) apply foo2
@@ -365,8 +417,8 @@ describe("edit controller", () => {
     test("receive an edit event from the stream", async () => { 
         const { controller, store, stream } = createTestContext();
 
-        await controller.update("foo", "bar").then(result => controller.waitForEdit(result.edit));
-        await controller.update("foo", "bar2").then(result => controller.waitForEdit(result.edit));
+        await controller.update("foo", "bar").then(result => controller.waitForSubmit(result.edit));
+        await controller.update("foo", "bar2").then(result => controller.waitForSubmit(result.edit));
 
         // simulate saving an edit and pushing it from the server to the client
         const edit = Edits.createUpdateTestEdit("foo", "bar3");
@@ -397,8 +449,8 @@ describe("edit controller", () => {
     test("receive an edit event from the stream that has already been applied", async () => { 
         const { controller, store, stream } = createTestContext();
 
-        await controller.update("foo", "bar").then(result => controller.waitForEdit(result.edit));
-        await controller.update("foo", "bar2").then(result => controller.waitForEdit(result.edit));
+        await controller.update("foo", "bar").then(result => controller.waitForSubmit(result.edit));
+        await controller.update("foo", "bar2").then(result => controller.waitForSubmit(result.edit));
         
         // only wait until the edit has been applied to simulate an edit bouncing back before the submit queue has finished
         await controller.update("foo", "bar3");
@@ -430,8 +482,8 @@ describe("edit controller", () => {
     test("receive an edit event from the stream that is for an unknown type", async () => { 
         const { controller, store, stream } = createTestContext();
 
-        await controller.update("foo", "bar").then(result => controller.waitForEdit(result.edit));
-        await controller.update("foo", "bar2").then(result => controller.waitForEdit(result.edit));
+        await controller.update("foo", "bar").then(result => controller.waitForSubmit(result.edit));
+        await controller.update("foo", "bar2").then(result => controller.waitForSubmit(result.edit));
 
         await stream.pushEvent({ 
             modelType: controller.modelType,
@@ -456,9 +508,9 @@ describe("edit controller", () => {
         const { controller, store, stream } = createTestContext();
 
         // revision 2
-        await controller.update("foo", "bar").then(result => controller.waitForEdit(result.edit));
+        await controller.update("foo", "bar").then(result => controller.waitForSubmit(result.edit));
         // revision 3
-        await controller.update("foo", "bar2").then(result => controller.waitForEdit(result.edit));
+        await controller.update("foo", "bar2").then(result => controller.waitForSubmit(result.edit));
 
         // simulate saving a couple edits to the server
         const edit1 = Edits.createUpdateTestEdit("foo", "bar3");
@@ -471,7 +523,7 @@ describe("edit controller", () => {
 
         // simulate applying and submitting an edit on the client before receiving the event from the server
         // at this point the server will return revision 6 which will not be sequential to the expected value causing the model to sync
-        await controller.update("foo", "bar4").then(result => controller.waitForEdit(result.edit));
+        await controller.update("foo", "bar4").then(result => controller.waitForSubmit(result.edit));
 
         // push the edits to the client/controller -- the controller is expected to handle keeping things in sync
         stream.pushEvent({ 
@@ -516,7 +568,7 @@ describe("edit controller", () => {
 
         // create a child
         const child = createChild("value");
-        await controller.addChild(child.id).then(result => controller.waitForEdit(result.edit));
+        await controller.addChild(child.id).then(result => controller.waitForSubmit(result.edit));
 
         // simulate saving an edit and pushing it from the server to the client
         const edit = Edits.createUpdateChildEdit("value2");
@@ -641,7 +693,7 @@ describe("edit controller", () => {
             revision: revision2
         });
 
-        await context.controller.waitForIdle();
+        await Promise.all(contexts.map(context => context.controller.waitForIdle()));
 
         expect(context.stream.connectionCount).toBe(3);
         expect(contexts[0].controller.model.foo).toBeUndefined();
@@ -657,7 +709,7 @@ describe("edit controller", () => {
     // the tests below test the integration of the EditHistory and EditController
     test("Undo a published edit", async () => {
         const { controller, store } = createTestContext();
-        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+        const history = new EditHistory(toEditHistoryPublisher(controller.createApplyPublisher()));
         
         const result1 = await controller.update("foo", "bar");
         const result2 = await controller.update("foo2", "bar2");
@@ -687,13 +739,13 @@ describe("edit controller", () => {
 
     test("Undo an edit after receiving an edit from the stream", async () => {
         const { controller, store, stream } = createTestContext();
-        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+        const history = new EditHistory(toEditHistoryPublisher(controller.createApplyPublisher()));
 
         const result1 = await controller.update("foo", "bar");
         const result2 = await controller.update("foo2", "bar2");
 
-        await controller.waitForEdit(result1.edit);
-        await controller.waitForEdit(result2.edit);
+        await controller.waitForSubmit(result1.edit);
+        await controller.waitForSubmit(result2.edit);
 
         history.push(result1.reverse!);
         history.push(result2.reverse!);
@@ -734,13 +786,13 @@ describe("edit controller", () => {
 
     test("Undo and then redo an edit after receiving an edit from the stream", async () => {
         const { controller, store, stream } = createTestContext();
-        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+        const history = new EditHistory(toEditHistoryPublisher(controller.createApplyPublisher()));
 
         const result1 = await controller.update("foo", "bar");
         const result2 = await controller.update("foo2", "bar2");
 
-        await controller.waitForEdit(result1.edit);
-        await controller.waitForEdit(result2.edit);
+        await controller.waitForSubmit(result1.edit);
+        await controller.waitForSubmit(result2.edit);
 
         history.push(result1.reverse!);
         history.push(result2.reverse!);
@@ -783,7 +835,7 @@ describe("edit controller", () => {
 
     test("Undo an unrecognized edit", async () => {
         const { controller, store } = createTestContext();
-        const history = new EditHistory(toEditHistoryPublisher(controller.createPublisher()));
+        const history = new EditHistory(toEditHistoryPublisher(controller.createApplyPublisher()));
         
         await controller.update("foo", "bar");
 

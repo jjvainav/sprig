@@ -25,6 +25,7 @@ const dispatcher: IEditDispatcher = edit => {
 
     return delay(() => error ? Promise.reject(new Error()) : Promise.resolve(response), amount);
 };
+
 const observeDispatcher = (out: IEditOperation[], dispatcher: IEditDispatcher): IEditDispatcher => {
     return edit => dispatcher(edit).then(result => {
         out.push(edit);
@@ -67,6 +68,57 @@ describe("edit queue", () => {
         expect(result.edit).toBe(edit);
         expect(result.error).toBeUndefined();
         expect(result.response).toBeUndefined();
+    });
+
+    test("publish edit to channel with queue configured to dispatch immediately", async () => {
+        let dispatched = false;
+        const queue = new EditQueue({ 
+            dispatcher: () => {
+                dispatched = true;
+                return Promise.resolve("Test");
+            }
+        });
+
+        const channel = queue.createChannel();
+        const publisher = channel.createPublisher();
+        const edit = createEdit();
+        
+        const promise = publisher.publish(edit);
+        // capture to see if the edit was dispatched without waiting; this is the default behavior
+        const dispatchedImmediately = dispatched;
+        const result = await promise;
+
+        expect(dispatchedImmediately).toBe(true);
+        expect(result.success).toBe(true);
+        expect(result.edit).toBe(edit);
+        expect(result.error).toBeUndefined();
+        expect(result.response).toBe("Test");
+    });
+
+    test("publish edit to channel with queue configured to have a delay", async () => {
+        let dispatched = false;
+        const queue = new EditQueue({
+            delay: 0,
+            dispatcher: () => {
+                dispatched = true;
+                return Promise.resolve("Test");
+            }
+        });
+
+        const channel = queue.createChannel();
+        const publisher = channel.createPublisher();
+        const edit = createEdit();
+        
+        const promise = publisher.publish(edit);
+        const dispatchedImmediately = dispatched;
+        const result = await promise;
+
+        // by adding a delay to the queue the publish function returns prior to dispatching and we must then wait
+        expect(dispatchedImmediately).toBe(false);
+        expect(result.success).toBe(true);
+        expect(result.edit).toBe(edit);
+        expect(result.error).toBeUndefined();
+        expect(result.response).toBe("Test");
     });
 
     test("publish edit to private channel", async () => {
