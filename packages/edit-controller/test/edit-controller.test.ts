@@ -1,4 +1,6 @@
 import { EditHistory } from "../../edit-history";
+import { IEditOperation } from "../../edit-operation";
+import { IReceivedEditResult } from "../src";
 import { 
     Edits, IAddChild, IChild, IInitChild, IInitTest, MockApi, MockEditEventStream, MockEditStore, 
     toEditHistoryPublisher, TestController, TestModel 
@@ -56,6 +58,12 @@ describe("edit controller", () => {
     test("publish edit", async () => {
         const { controller, store } = createTestContext();
 
+        const appliedEdits: IEditOperation[] = [];
+        controller.onEditApplied(result => appliedEdits.push(result.edit));
+
+        const submittedEdits: IEditOperation[] = [];
+        controller.onEditSubmitted(result => submittedEdits.push(result.edit));
+
         // update will create and publish an update edit
         const applyResult = await controller.update("foo", "bar");
 
@@ -70,6 +78,12 @@ describe("edit controller", () => {
         expect(applyResult.success).toBe(true);
         expect(submitResult).toBeDefined();
         expect(submitResult!.success).toBe(true);
+
+        expect(appliedEdits.length).toBe(1);
+        expect(appliedEdits[0]).toBe(applyResult.edit);
+
+        expect(appliedEdits.length).toBe(1);
+        expect(appliedEdits[0]).toBe(submitResult!.edit);
 
         expect(controller.model.foo).toBe("foo");
         expect(controller.model.bar).toBe("bar");
@@ -424,6 +438,9 @@ describe("edit controller", () => {
         const edit = Edits.createUpdateTestEdit("foo", "bar3");
         const revision = store.addEdit(controller.modelType, controller.model.id, edit);
 
+        const receivedEditResults: IReceivedEditResult[] = [];
+        controller.processManager.onEditReceived(result => receivedEditResults.push(result));
+
         // wait until after the event was pushed so that the background processing of the edit can start
         await stream.pushEvent({ 
             modelType: controller.modelType,
@@ -444,10 +461,20 @@ describe("edit controller", () => {
         expect(edits[3].edit.type).toBe("update");
         expect(edits[3].edit.data.bar).toBe("bar3");
         expect(edits[3].revision).toBe(4);
+
+        expect(receivedEditResults).toHaveLength(1);
+        expect(receivedEditResults[0].success).toBe(true);
+        expect(receivedEditResults[0].error).toBeUndefined();
     });
 
     test("receive an edit event from the stream that has already been applied", async () => { 
         const { controller, store, stream } = createTestContext();
+
+        const appliedEdits: IEditOperation[] = [];
+        controller.onEditApplied(result => appliedEdits.push(result.edit));
+
+        const receivedEditResults: IReceivedEditResult[] = [];
+        controller.processManager.onEditReceived(result => receivedEditResults.push(result));
 
         await controller.update("foo", "bar").then(result => controller.waitForSubmit(result.edit));
         await controller.update("foo", "bar2").then(result => controller.waitForSubmit(result.edit));
@@ -477,6 +504,11 @@ describe("edit controller", () => {
         expect(edits[3].edit.type).toBe("update");
         expect(edits[3].edit.data.bar).toBe("bar3");
         expect(edits[3].revision).toBe(4);
+
+        expect(appliedEdits).toHaveLength(3);
+        expect(receivedEditResults).toHaveLength(1);
+        expect(receivedEditResults[0].success).toBe(false);
+        expect(receivedEditResults[0].error).toBe("outdated");
     });
 
     test("receive an edit event from the stream that is for an unknown type", async () => { 
@@ -484,6 +516,9 @@ describe("edit controller", () => {
 
         await controller.update("foo", "bar").then(result => controller.waitForSubmit(result.edit));
         await controller.update("foo", "bar2").then(result => controller.waitForSubmit(result.edit));
+        
+        const receivedEditResults: IReceivedEditResult[] = [];
+        controller.processManager.onEditReceived(result => receivedEditResults.push(result));
 
         await stream.pushEvent({ 
             modelType: controller.modelType,
@@ -502,6 +537,11 @@ describe("edit controller", () => {
         expect(controller.model.foo).toBe("foo");
         expect(controller.model.bar).toBe("bar2");
         expect(controller.model.revision).toBe(3);
+
+        expect(receivedEditResults).toHaveLength(1);
+        expect(receivedEditResults[0].success).toBe(false);
+        expect(receivedEditResults[0].applyResult).toBeDefined();
+        expect(receivedEditResults[0].error).toBe("apply_failed");
     });
 
     test("receive edit events from the stream that are out of order", async () => { 

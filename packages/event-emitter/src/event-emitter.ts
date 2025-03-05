@@ -181,7 +181,7 @@ export class EventEmitter<TArgs = void> {
         });
     }
 
-    protected get count(): number {
+    get count(): number {
         if (!this.callbacks) {
             return 0;
         }

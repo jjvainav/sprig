@@ -47,6 +47,65 @@ describe("event emmitter", () => {
         expect(count).toBe(4);
     });
 
+    test("aggregate chain and ensure event removal", () => {
+        const emitter1 = new EventEmitter();
+        const emitter2 = new EventEmitter();
+        const emitter3 = new EventEmitter();
+        const emitter4 = new EventEmitter();
+
+        let count = 0;
+        const aggregatedEvent = emitter1.event.aggregate(
+            emitter2.event.aggregate(
+            emitter3.event.aggregate(
+            emitter4.event)));
+
+        const listener = aggregatedEvent.on(() => count++);
+
+        emitter1.emit();
+        emitter2.emit();
+        emitter3.emit();
+        emitter4.emit();
+
+        listener.remove();
+
+        emitter1.emit();
+        emitter2.emit();
+        emitter3.emit();
+        emitter4.emit();
+
+        expect(count).toBe(4);
+        expect(emitter1.count).toBe(0);
+        expect(emitter2.count).toBe(0);
+        expect(emitter3.count).toBe(0);
+        expect(emitter4.count).toBe(0);
+    });
+
+    test("aggregate multiple and ensure event removal", () => {
+        const emitters: EventEmitter[] = [];
+        const baseEmitter = new EventEmitter();
+        let aggregatedEvent = baseEmitter.event;
+
+        emitters.push(new EventEmitter());
+        emitters.push(new EventEmitter());
+        emitters.push(new EventEmitter());
+        emitters.push(new EventEmitter());
+
+        emitters.forEach(emitter => aggregatedEvent = aggregatedEvent.aggregate(emitter.event));
+
+        let count = 0;
+        const listener = aggregatedEvent.on(() => count++);
+
+        emitters.forEach(emitter => emitter.emit());
+        listener.remove();
+        emitters.forEach(emitter => emitter.emit());
+
+        expect(count).toBe(4);
+        expect(emitters[0].count).toBe(0);
+        expect(emitters[1].count).toBe(0);
+        expect(emitters[2].count).toBe(0);
+        expect(emitters[3].count).toBe(0);
+    });
+
     test("debounce single emit", () => {
         const foo = new Foo();
 

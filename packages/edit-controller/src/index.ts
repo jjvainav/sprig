@@ -76,7 +76,7 @@ export interface IEditControllerOptions<TModel extends IModel> {
     readonly controllerProvider?: IEditControllerProvider;
     /** A process manager for the controller; this is useful when wanting to share a stream and/or queues for processing edits across multiple controllers. */
     readonly processManager?: IEditProcessManager;
-    /** An event stream to listen for edits from a remote source; this will be ignored if an process manager is provided. */
+    /** An event stream to listen for edits from a remote source; this will be ignored if a process manager is provided. */
     readonly stream?: IEditEventStream;
     /** An object responsible for keeping the controller's model up to date. */
     readonly synchronizer: ISynchronizer;
@@ -123,6 +123,12 @@ export interface IEditHandlers<TEdit extends IEditOperation = IEditOperation> {
 
 /** Manages the process of handling edits as they are received from a stream and applied/submitted. */
 export interface IEditProcessManager {
+    /** An event that is raised after an edit has been applied. */
+    readonly onEditApplied: IEvent<IApplyEditResult>;
+    /** An event that is raised after an edit has been received on an edit stream. */
+    readonly onEditReceived: IEvent<IReceivedEditResult>;
+    /** An event that is raised after an edit has been submitted. */
+    readonly onEditSubmitted: IEvent<ISubmitEditResult>;
     connectStream(): void;
     /** 
      * Creates a publisher that can be used to publish edits against the model; the publisher will wait until the edit has been applied. 
@@ -146,6 +152,18 @@ export interface IModel {
 /** A callback responsible for submitting an edit to the server. */
 export interface ISubmitEditHandler<TEdit extends IEditOperation = IEditOperation> {
     (edit: TEdit): Promise<ISubmitEditResult>;
+}
+
+/** Represents the result of an edit received via a stream. */
+export interface IReceivedEditResult {
+    /** True if the edit was processed successful; otherwise false. */
+    readonly success: boolean;
+    /** The result of applying an edit that was received. */
+    readonly applyResult?: IApplyEditResult;
+    /** The data that was received. */
+    readonly data: IEditEventStreamData;
+    /** Identifies why a recieved edit was unsuccessful if it failed to process. */
+    readonly error?: "apply_failed" | "invalid_model" | "outdated";
 }
 
 /** Represents the result of a submission. */
@@ -221,6 +239,9 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
             options.stream
         );
 
+        this.processManager.onEditApplied.forward(this.editApplied);
+        this.processManager.onEditSubmitted.forward(this.editSubmitted);
+
         this.connectStream();
     }
 
@@ -239,14 +260,15 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
     async applyEdit(edit: IEditOperation, revision?: number): Promise<IApplyEditResult> {
         const handler = this.getApplyHandler(edit);
         if (!handler) {
-            return { success: false, edit, error: new Error(`Unable to find apply handler for edit (${edit.type}) with controller for model type (${this.modelType}) and id (${this.model.id}).`) };
+            return this.onApplyEditFail(edit, new Error(`Unable to find apply handler for edit (${edit.type}) with controller for model type (${this.modelType}) and id (${this.model.id}).`));
         }
 
         const result = await Promise.resolve(handler(edit))
-            .catch(error => ({ success: false, edit, error: new Error(`Error caught applying immediate edit (${edit.type}).`, { cause: error }) }));
+            .catch(error => this.onApplyEditFail(edit, new Error(`Error caught applying immediate edit (${edit.type}).`, { cause: error })));
 
         if (result.success && revision) {
             this.model.setRevision(revision);
+            this.editApplied.emit(result);
         }
 
         return result;
@@ -265,11 +287,11 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
     }
 
     getApplyHandler<TEdit extends IEditOperation>(edit: TEdit): IApplyEditHandler<TEdit> | undefined {
-        return this.hookHandler(this.handlers.get(edit.type)?.apply, this.editApplied);
+        return this.handlers.get(edit.type)?.apply;
     }
 
     getSubmitHandler<TEdit extends IEditOperation>(edit: TEdit): ISubmitEditHandler<TEdit> | undefined {
-        return this.hookHandler(this.handlers.get(edit.type)?.submit, this.editSubmitted);
+        return this.handlers.get(edit.type)?.submit;
     }
 
     publishEdit<TEdit extends IEditOperation = IEditOperation>(edit: TEdit, revision?: number): IPublishEditContext {
@@ -302,17 +324,14 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
         return this.modelType === modelType && this.model.id === modelId ? this : undefined;
     }
 
-    protected registerEditHandlers<TEdit extends IEditOperation>(editType: string, handlers: IEditHandlers<TEdit>): void {
-        this.handlers.set(editType, handlers);
+    protected onApplyEditFail(edit: IEditOperation, error: Error): IApplyEditResult {
+        const result: IApplyEditResult = { success: false, edit, error };
+        this.editApplied.emit(result);
+        return result;
     }
 
-    private hookHandler<TResult>(handler: ((edit: IEditOperation) => TResult | Promise<TResult>) | undefined, emitter: EventEmitter<TResult>): ((edit: IEditOperation) => Promise<TResult>) | undefined {
-        // hook the handler to raise an event when processed
-        return handler && (async edit => {
-            const result = await Promise.resolve(handler(edit));
-            emitter.emit(result);
-            return result;
-        });
+    protected registerEditHandlers<TEdit extends IEditOperation>(editType: string, handlers: IEditHandlers<TEdit>): void {
+        this.handlers.set(editType, handlers);
     }
 }
 
@@ -325,12 +344,20 @@ export class EditController<TModel extends IModel = IModel> implements IEditCont
  * The reconciliation process consists of submitting edits to the remote store and updating a model's revision.
  * 
  * If the edits or model get out of sync the process manager will pause the apply/publish queues and attempt
- * to re-sync the model by rolling back applied but not committed edits and then fetching latest edits from the remot store.
+ * to re-sync the model by rolling back applied but not committed edits and then fetching latest edits from 
+ * the remote store.
  * 
  * Lastly, the process manager checks the validity of a model by assuming revision numbers are sequential. 
  */
 export class EditProcessManager implements IEditProcessManager {
+    private readonly editApplied = new EventEmitter<IApplyEditResult>();
+    private readonly editReceived = new EventEmitter<IReceivedEditResult>();
+    private readonly editSubmitted = new EventEmitter<ISubmitEditResult>();
+    // finished is raised when the manager has finished publishing any pending edits
+    private readonly finished = new EventEmitter();
+    // idle is raised when the manager has finished publishing any edits and the stream queue is also empty
     private readonly idle = new EventEmitter();
+    // a set of edits currently being published
     private readonly editContexts = new Map<IEditOperation, IEditContext>();
 
     private readonly applyQueue: IEditQueue<IApplyEditResult>;
@@ -360,22 +387,51 @@ export class EditProcessManager implements IEditProcessManager {
         this.eventQueue.onIdle(() => this.emitIfIdle());
     }
 
+    get onEditApplied(): IEvent<IApplyEditResult> {
+        return this.editApplied.event;
+    }
+
+    get onEditReceived(): IEvent<IReceivedEditResult> {
+        return this.editReceived.event;
+    }
+
+    get onEditSubmitted(): IEvent<ISubmitEditResult> {
+        return this.editSubmitted.event;
+    }
+
     connectStream(): void {
         if (this.stream && !this.streamListener) {
             this.streamListener = this.stream.onData(data => {
                 this.eventQueue.push(async () => {
                     const controller = await this.getController(data.modelType, data.modelId);
 
-                    // ignore the event if the controller is not found or the model for the controller is up to date with the received edit
-                    if (controller && controller.model.revision < data.revision) {
-                        // publish the edit and wait for it to apply before processing the next event
-                        const result = await this.publishEdit(controller, data.edit, data.revision).waitForApply();
+                    // skip if a controller was not found for the model
+                    if (controller) {
+                        // wait for all published edits to finish processing before continuing
+                        await this.waitForFinish();
 
-                        // TODO: check if the error was due to an unexpected or out of sync revision number
-                        if (!result.success) {
-                            // if we fail to apply the event synchronize
-                            await this.synchronize(controller);
+                        // ignore if the model for the controller is up to date with the received edit
+                        if (controller.model.revision < data.revision) {
+                            console.log("onData - Publish", controller.model.revision);
+                            // publish the edit and wait for it to apply before processing the next event
+                            const result = await this.publishEdit(controller, data.edit, data.revision).waitForApply();
+                            console.log("onData - Result", result);
+                            
+                            if (!result.success) {
+                                // if we fail to apply the event synchronize
+                                this.editReceived.emit({ success: false, data, applyResult: result, error: "apply_failed" });
+                                await this.synchronize(controller);
+                            }
+                            else {
+                                this.editReceived.emit({ success: true, data, applyResult: result });
+                            }
                         }
+                        else {
+                            this.editReceived.emit({ success: false, data, error: "outdated" });
+                        }
+                    }
+                    else {
+                        this.editReceived.emit({ success: false, data, error: "invalid_model" });
                     }
                 });
             });
@@ -415,7 +471,7 @@ export class EditProcessManager implements IEditProcessManager {
         };
     }
 
-    async waitForIdle(): Promise<void> {
+    waitForIdle(): Promise<void> {
         return this.isIdle() ? Promise.resolve() : new Promise(resolve => {
             this.idle.event.once(() => resolve());
         });
@@ -429,11 +485,12 @@ export class EditProcessManager implements IEditProcessManager {
     private async applyEdit(edit: IEditOperation): Promise<IApplyEditResult> {
         const context = this.editContexts.get(edit);
         if (!context) {
-            return { success: false, edit, error: new Error(`Unexpected edit (${edit.type}) in apply queue.`) };
+            return this.onApplyEditFail(edit, new Error(`Unexpected edit (${edit.type}) in apply queue.`));
         }
 
         if (context.revision) {
             if (context.controller.model.revision >= context.revision) {
+                console.log("Out of date", context.controller.model.revision, context.revision);
                 // ignore the edit if a revision is provided and out of date
                 return context.onApplyFail(new Error(`Edit (${edit.type}) is out of date.`));
             }
@@ -444,6 +501,7 @@ export class EditProcessManager implements IEditProcessManager {
             }
         }
 
+        console.log("applyEdit");
         // grab the apply handler to use below
         const apply = context.controller.getApplyHandler(edit);
         if (!apply) {
@@ -500,17 +558,21 @@ export class EditProcessManager implements IEditProcessManager {
             onApply: result => {
                 context.reverse = result.reverse;
                 resolveApply(result);
+                this.editApplied.emit(result);
                 return result;
             },
             onApplyFail: error => {
+                // invoke onApply first so that the events are raised in expected order (e.g. apply followed by submit)
+                const result = context.onApply({ success: false, edit, error });
                 // need to also fail the submit so waitForSubmit does not block forever; onSubmitFail will remove/dispose the edit context
                 context.onSubmitFail(new Error(`Failed to apply edit (${edit.type}).`, { cause: error }));
-                return context.onApply({ success: false, edit, error });
+                return result;
             },
             onSubmit: result => {
                 // remove/dispose the edit context after the edit has been submitted
                 this.removeEditContext(edit);
                 resolveSubmit(result);
+                this.editSubmitted.emit(result);
                 return result;
             },
             onSubmitFail: error => context.onSubmit({ success: false, edit, error }),
@@ -523,20 +585,42 @@ export class EditProcessManager implements IEditProcessManager {
         return context;
     }
 
+    private emitIfFinished(): void {
+        if (!this.isPublishing()) {
+            this.finished.emit();
+        }
+    }
+
     private emitIfIdle(): void {
         if (this.isIdle()) {
             this.idle.emit();
         }
     }
+    
+    private isPublishing(): boolean {
+        return !!this.editContexts.size;
+    }
 
     private isIdle(): boolean {
-        return !this.editContexts.size && !this.syncPromise && this.eventQueue.isIdle;
+        return !this.isPublishing() && !this.syncPromise && this.eventQueue.isIdle;
+    }
+
+    private onApplyEditFail(edit: IEditOperation, error: Error): IApplyEditResult {
+        const result: IApplyEditResult = { success: false, edit, error };
+        this.editApplied.emit(result);
+        return result;
+    }
+
+    private onSubmitEditFail(edit: IEditOperation, error: Error): ISubmitEditResult {
+        const result: ISubmitEditResult = { success: false, edit, error };
+        this.editSubmitted.emit(result);
+        return result;
     }
 
     private async submitEdit(edit: IEditOperation): Promise<ISubmitEditResult> {
         const context = this.editContexts.get(edit);
         if (!context) {
-            return { success: false, edit, error: new Error(`Unexpected edit (${edit.type}) in submit queue.`) };
+            return this.onSubmitEditFail(edit, new Error(`Unexpected edit (${edit.type}) in submit queue.`));
         }
 
         if (!context.submit) {
@@ -575,6 +659,7 @@ export class EditProcessManager implements IEditProcessManager {
 
     private removeEditContext(edit: IEditOperation): void {
         this.editContexts.delete(edit);
+        this.emitIfFinished();
         this.emitIfIdle();
     }
 
@@ -595,6 +680,12 @@ export class EditProcessManager implements IEditProcessManager {
                 this.applyChannel.resume();
                 this.emitIfIdle();
             });
+    }
+
+    private waitForFinish(): Promise<void> {
+        return !this.isPublishing() ? Promise.resolve() : new Promise(resolve => {
+            this.finished.event.once(() => resolve());
+        });
     }
 }
 
