@@ -412,10 +412,8 @@ export class EditProcessManager implements IEditProcessManager {
 
                         // ignore if the model for the controller is up to date with the received edit
                         if (controller.model.revision < data.revision) {
-                            console.log("onData - Publish", controller.model.revision);
                             // publish the edit and wait for it to apply before processing the next event
                             const result = await this.publishEdit(controller, data.edit, data.revision).waitForApply();
-                            console.log("onData - Result", result);
                             
                             if (!result.success) {
                                 // if we fail to apply the event synchronize
@@ -490,7 +488,6 @@ export class EditProcessManager implements IEditProcessManager {
 
         if (context.revision) {
             if (context.controller.model.revision >= context.revision) {
-                console.log("Out of date", context.controller.model.revision, context.revision);
                 // ignore the edit if a revision is provided and out of date
                 return context.onApplyFail(new Error(`Edit (${edit.type}) is out of date.`));
             }
@@ -501,7 +498,6 @@ export class EditProcessManager implements IEditProcessManager {
             }
         }
 
-        console.log("applyEdit");
         // grab the apply handler to use below
         const apply = context.controller.getApplyHandler(edit);
         if (!apply) {
