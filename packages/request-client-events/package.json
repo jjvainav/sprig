@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-events",
     "description": "A wrapper for the request client that exposes EventSource events using EventEmitters.",
-    "version": "0.2.11",
+    "version": "0.2.12",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,10 +21,10 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/event-emitter": "0.2.11",
-        "@sprig/request-client": "0.2.11"
+        "@sprig/event-emitter": "0.2.12",
+        "@sprig/request-client": "0.2.12"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.2.11"
+        "@sprig/request-client-mock": "0.2.12"
     }
 }
