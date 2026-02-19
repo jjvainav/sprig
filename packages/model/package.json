@@ -1,7 +1,7 @@
 {
     "name": "@sprig/model",
     "description": "Provides common object abstractions and logic for a basic model.",
-    "version": "0.2.14",
+    "version": "0.2.15",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -19,5 +19,6 @@
         "build": "tsc -b .",
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo",
         "test": "jest"
-    }
+    },
+    "gitHead": "562d8a0e79017619aa03a69bf7692e295c1d11a9"
 }

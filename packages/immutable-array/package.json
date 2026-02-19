@@ -1,7 +1,7 @@
 {
     "name": "@sprig/immutable-array",
     "description": "Provides functionality for working with immutable arrays.",
-    "version": "0.2.14",
+    "version": "0.2.15",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -18,5 +18,6 @@
     "scripts": {
         "build": "tsc",
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo"
-    }
+    },
+    "gitHead": "562d8a0e79017619aa03a69bf7692e295c1d11a9"
 }

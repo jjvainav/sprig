@@ -1,7 +1,7 @@
 {
     "name": "@sprig/unique-id",
     "description": "Node.js package for generating base62 encoded uuids.",
-    "version": "0.2.14",
+    "version": "0.2.15",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,5 +21,6 @@
     "dependencies": {
         "base-x": "4.0.0",
         "uuid": "9.0.0"
-    }
+    },
+    "gitHead": "562d8a0e79017619aa03a69bf7692e295c1d11a9"
 }

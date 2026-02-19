@@ -1,7 +1,7 @@
 {
     "name": "@sprig/immutable-collection",
     "description": "An immutable collection of objects.",
-    "version": "0.2.14",
+    "version": "0.2.15",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,6 +21,7 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/immutable-array": "0.2.14"
-    }
+        "@sprig/immutable-array": "0.2.15"
+    },
+    "gitHead": "562d8a0e79017619aa03a69bf7692e295c1d11a9"
 }
