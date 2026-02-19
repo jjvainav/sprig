@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-zod",
     "description": "Provides a request client response handler for validating response data using zod.",
-    "version": "0.2.16",
+    "version": "0.2.17",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,11 +21,11 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/request-client": "0.2.16",
+        "@sprig/request-client": "0.2.17",
         "zod": "3.21.4"
     },
     "devDependencies": {
-        "@sprig/request-client-mock": "0.2.16"
+        "@sprig/request-client-mock": "0.2.17"
     },
-    "gitHead": "6d2498aceac13d76e5d91fa5e3de8324544cd4d2"
+    "gitHead": "9fabdfb24edb82545eafaf90a0d370351077f422"
 }
