@@ -1,7 +1,7 @@
 {
     "name": "@sprig/edit-controller",
     "description": "Provides a mediator for managing applying and synchronizing edits for an edit model with a remote server.",
-    "version": "0.2.19",
+    "version": "0.2.20",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,12 +21,12 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/async-queue": "0.2.19",
-        "@sprig/edit-operation": "0.2.19",
-        "@sprig/edit-queue": "0.2.19"
+        "@sprig/async-queue": "0.2.20",
+        "@sprig/edit-operation": "0.2.20",
+        "@sprig/edit-queue": "0.2.20"
     },
     "devDependencies": {
-        "@sprig/edit-history": "0.2.19"
+        "@sprig/edit-history": "0.2.20"
     },
-    "gitHead": "c4e477cddc153bd33144875cdd72f0a5109ab7fa"
+    "gitHead": "1439c94d0ea3c69cce9b613a3c78a66a4863a631"
 }
