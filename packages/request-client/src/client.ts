@@ -1,4 +1,6 @@
-import axios from "axios";
+import axios, { ResponseType } from "axios";
+
+export { ResponseType };
 
 /** Represents an error while attempting to make a request. */
 export enum RequestErrorCode {
@@ -78,6 +80,12 @@ export interface IRequestOptions {
      * codes and reject all others.
      */
     readonly expectedStatus?: number[] | ((status: number) => boolean);
+    /** 
+     * Defines the expected response type for a request; the default is json. When responseType is 'stream'
+     * the response data will be a node stream.Readable object. Note: responseType 'stream' is only supported
+     * in a node environment.
+     */
+    readonly responseType?: ResponseType;
 }
 
 /** Defines a callback that accepts event stream options and builds a request. */
@@ -294,6 +302,7 @@ const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) =
         headers: request.options.headers,
         data: request.options.data,
         timeout: request.options.timeout || defaultTimeout,
+        responseType: request.options.responseType,
         validateStatus: status => isExpectedStatus(request, status)
     })
     .then(response => resolve({

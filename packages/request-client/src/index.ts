@@ -1,4 +1,5 @@
 export * from "./authorization";
+export { ResponseType } from "./client";
 export * from "./common";
 
 import { createClient } from "./client";
