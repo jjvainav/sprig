@@ -1,7 +1,7 @@
 {
     "name": "@sprig/event-emitter-dom",
     "description": "Event emitter class extensions for DOM events.",
-    "version": "0.2.18",
+    "version": "0.2.19",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -21,10 +21,10 @@
         "test": "jest"
     },
     "dependencies": {
-        "@sprig/event-emitter": "0.2.18"
+        "@sprig/event-emitter": "0.2.19"
     },
     "devDependencies": {
         "jest-environment-jsdom": "29.5.0"
     },
-    "gitHead": "41fabb1a864ce7be26e91f89800e0678cc4dafdb"
+    "gitHead": "c4e477cddc153bd33144875cdd72f0a5109ab7fa"
 }
