@@ -1,7 +1,7 @@
 {
     "name": "@sprig/request-client-class",
     "description": "Provides a simple base class for wrapping a request client and expose resources as functions.",
-    "version": "0.2.20",
+    "version": "0.2.21",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -20,7 +20,7 @@
         "clean": "rimraf ./dist && rimraf tsconfig.tsbuildinfo"
     },
     "dependencies": {
-        "@sprig/request-client": "0.2.20"
+        "@sprig/request-client": "0.2.21"
     },
     "gitHead": "1439c94d0ea3c69cce9b613a3c78a66a4863a631"
 }
