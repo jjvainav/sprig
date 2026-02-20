@@ -373,6 +373,7 @@ describe("request", () => {
         })
         .use(context => {
             context.resolve({
+                headers: {},
                 status: 201,
                 data: {}
             });
@@ -394,6 +395,7 @@ describe("request", () => {
             })
             .use(context => {
                 context.resolve({
+                    headers: {},
                     status: 401,
                     data: {}
                 });

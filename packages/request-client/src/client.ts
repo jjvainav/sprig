@@ -2,6 +2,8 @@ import axios, { ResponseType } from "axios";
 
 export { ResponseType };
 
+export type ResponseHeaders = { [key: string]: string | string[] | null };
+
 /** Represents an error while attempting to make a request. */
 export enum RequestErrorCode {
     /** Indicates that an invalid response was received. */
@@ -104,7 +106,7 @@ export interface IEventStreamOptions extends IRequestOptions {
 export interface IRequestInterceptorContext {
     readonly request: IRequest;
     readonly next: RequestInterceptorFunction;
-    readonly resolve: (response: { readonly status: number; readonly data: any; }) => void;
+    readonly resolve: (response: IResponseContent) => void;
     readonly reject: (error: RequestError) => void;
 }
 
@@ -114,6 +116,13 @@ export interface IRequestInterceptor {
 
 export interface IResponse {
     readonly request: IRequest;
+    readonly headers: ResponseHeaders;
+    readonly status: number;
+    readonly data: any;
+}
+
+export interface IResponseContent {
+    readonly headers: ResponseHeaders;
     readonly status: number;
     readonly data: any;
 }
@@ -183,9 +192,10 @@ export function isExpectedStatus(request: IRequest, status: number): boolean {
         : request.options.expectedStatus(status);
 }
 
-function createErrorForResponse(request: IRequest, response: { status: number, data: any }, message?: string): RequestError {
+function createErrorForResponse(request: IRequest, response: IResponseContent, message?: string): RequestError {
     const errorResponse = {
         request: request,
+        headers: response.headers,
         status: response.status,
         data: response.data
     };
@@ -227,6 +237,7 @@ function createEventSourceInvoker(createEventSource: (options: IRequestOptions) 
                 request,
                 response: {
                     request: request,
+                    headers: {},
                     status: 200,
                     data: source
                 }
@@ -246,7 +257,7 @@ function createEventSourceInvoker(createEventSource: (options: IRequestOptions) 
             if (status) {
                 // the EventSource polyfill will include the HTTP status if the request returned a non-200 status code and 
                 // is useful if the connection failed for some reason other than a network issue (e.g. unauthorized, invalid endpoint, etc.)
-                reject(createErrorForResponse(request, { status, data: {} }, (<any>event).message));    
+                reject(createErrorForResponse(request, { headers: {}, status, data: {} }, (<any>event).message));    
             }
     
             // the native EventSource does not provide a status code or any other useful info for a failed connection
@@ -309,6 +320,9 @@ const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) =
         request,
         response: {
             request: request,
+            headers: typeof response.headers.toJSON === "function" 
+                ? response.headers.toJSON(true) as ResponseHeaders
+                : {},
             status: response.status,
             data: response.data
         }
@@ -317,7 +331,16 @@ const axiosInvoker: IRequestInvoker = request => new Promise((resolve, reject) =
         // note: the axios error will get thrown for responses that fail validateStatus (i.e. status codes not specified as an expected status)
         if (axios.isAxiosError(error)) {
             if (error.response) {
-                reject(createErrorForResponse(request, error.response, error.message));
+                reject(createErrorForResponse(
+                    request, 
+                    {
+                        headers: typeof error.response.headers.toJSON === "function" 
+                            ? error.response.headers.toJSON(true) as ResponseHeaders
+                            : {},
+                        status: error.response.status,
+                        data: error.response.data
+                    }, 
+                    error.message));
             }
             else if (error.code === "ECONNABORTED") {
                 reject(new RequestError({
@@ -533,6 +556,7 @@ class RequestInstance implements IRequest {
                             request,
                             response: {
                                 request: request,
+                                headers: response.headers,
                                 status: response.status,
                                 data: response.data
                             }
